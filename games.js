@@ -18,6 +18,7 @@ import {
   getDepartmentById,
 } from './config.js';
 import { getIcon } from './icons.js';
+import { syncSaleImmediately } from './sync.js';
 
 // ── DOM helpers ──────────────────────────────────────────────
 function el(tag, className = '', innerHTML = '') {
@@ -313,7 +314,7 @@ function openGameSheet(parentContainer, deptId, items, preselectedItem) {
       startTime: sheet.dataset.timeStarted || now.toISOString(),
       status: 'active',
       dateStr: todayStr(),
-      syncStatus: online ? 'synced' : 'pending',
+      syncStatus: 'pending',
     };
 
     await saveGameSession(session);
@@ -372,7 +373,7 @@ async function endSession(session) {
     receiptNo: generateSaleId('games'),
     locked: true,
     voided: false,
-    syncStatus: _isOnline() ? 'synced' : 'pending',
+    syncStatus: 'pending',
   };
 
   await saveItemSale({
@@ -383,6 +384,7 @@ async function endSession(session) {
     unitPrice: finalTotal,
     total: finalTotal,
   });
+  const saleSyncResult = await syncSaleImmediately(sale);
 
   // Mark session as ended
   session.status = 'ended';
@@ -392,7 +394,7 @@ async function endSession(session) {
   session.saleId = sale.id;
   await saveGameSession(session);
 
-  _showToast(`Session ended — ${formatCurrency(finalTotal)}`, 'success');
+  _showToast(!saleSyncResult.success ? `Session ended; Google Sheets sync pending` : `Session ended — ${formatCurrency(finalTotal)}`, !saleSyncResult.success ? '' : 'success');
   _refreshDashboard();
 
   // Re-render

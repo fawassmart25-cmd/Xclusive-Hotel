@@ -23,6 +23,7 @@ import {
 } from './db.js';
 import { ROOM_CATEGORIES, PAYMENT_METHODS, formatCurrency, getActiveCategories } from './config.js';
 import { getIcon } from './icons.js';
+import { syncSaleImmediately } from './sync.js';
 
 // ── DOM helpers (local, matching app.js pattern) ─────────────
 function el(tag, className = '', innerHTML = '') {
@@ -426,9 +427,12 @@ async function handleSellSave(room, sheet, ctx) {
     dateStr: todayStr(),
     locked: true,
     voided: false,
+    syncStatus: 'pending',
   };
 
   await saveSale(sale);
+  const saleSyncResult = await syncSaleImmediately(sale);
+  const saleSyncPending = !saleSyncResult.success;
 
   // Save customer
   if (phone) {
@@ -463,7 +467,7 @@ async function handleSellSave(room, sheet, ctx) {
   });
 
   closeSheet();
-  _showToast(`Room ${room.number} sold to ${guestName}`, 'success');
+  _showToast(saleSyncPending ? `Room ${room.number} saved; Google Sheets sync pending` : `Room ${room.number} sold to ${guestName}`, saleSyncPending ? '' : 'success');
   _refreshDashboard();
 
   // Show success screen
@@ -555,6 +559,7 @@ function openCheckoutSheet(room) {
 
   $('#checkout-btn', sheet).addEventListener('click', async () => {
     const extra = Number($('#checkout-extra', sheet).value) || 0;
+    let extraSyncPending = false;
     if (extra > 0) {
       const extraSale = {
         id: generateSaleId('reception'),
@@ -573,13 +578,16 @@ function openCheckoutSheet(room) {
         dateStr: todayStr(),
         locked: true,
         voided: false,
+        syncStatus: 'pending',
       };
       await saveSale(extraSale);
+      const extraSyncResult = await syncSaleImmediately(extraSale);
+      extraSyncPending = !extraSyncResult.success;
     }
 
     await clearRoomOccupancy(room.number);
     closeSheet();
-    _showToast(`Room ${room.number} checked out`, 'success');
+    _showToast(extraSyncPending ? `Room ${room.number} checked out; extra charge sync pending` : `Room ${room.number} checked out`, extraSyncPending ? '' : 'success');
     _refreshDashboard();
 
     // Refresh the room grid

@@ -2,6 +2,7 @@
 import { getItemsByDepartment, saveItemSale, generateSaleId, todayStr } from './db.js';
 import { PAYMENT_METHODS, formatCurrency, getDepartmentById } from './config.js';
 import { getIcon } from './icons.js';
+import { syncSaleImmediately } from './sync.js';
 
 function el(tag, cls='', html=''){const e=document.createElement(tag);if(cls)e.className=cls;if(html)e.innerHTML=html;return e;}
 function $(s,p=document){return p.querySelector(s);}
@@ -68,10 +69,14 @@ function openCheckout(deptId,dept,cart,timeStarted,onSuccess){
     const now=new Date(), customer=$('#co-customer',sheet).value.trim(), ref=$('#co-refno',sheet).value.trim();
     const username=localStorage.getItem('xclusive_staff_username')||'';
     try{
+      let syncPending=false;
       for(const c of cart){
-        await saveItemSale({id:generateSaleId(deptId)+'_'+c.id,department:deptId,type:'item_sale',itemId:c.id,itemName:c.name,qty:c.qty,unitPrice:c.price,total:c.price*c.qty,paymentMethod:payment,refNo:payment==='cash'?'':ref,customerName:customer,soldBy:username,username,timeStarted:timeStarted||now.toISOString(),timeSaved:now.toISOString(),timestamp:now.toISOString(),dateStr:todayStr(),locked:true,voided:false,syncStatus:_isOnline()?'synced':'pending'});
+        const sale={id:generateSaleId(deptId)+'_'+c.id,department:deptId,type:'item_sale',itemId:c.id,itemName:c.name,qty:c.qty,unitPrice:c.price,total:c.price*c.qty,paymentMethod:payment,refNo:payment==='cash'?'':ref,customerName:customer,soldBy:username,username,timeStarted:timeStarted||now.toISOString(),timeSaved:now.toISOString(),timestamp:now.toISOString(),dateStr:todayStr(),locked:true,voided:false,syncStatus:'pending'};
+        await saveItemSale(sale);
+        const syncResult=await syncSaleImmediately(sale);
+        if(!syncResult.success) syncPending=true;
       }
-      close();_showToast(`Sale completed — ${formatCurrency(total)}`,'success');_refreshDashboard();await onSuccess();
+      close();_showToast(syncPending?'Sale saved; Google Sheets sync pending':`Sale completed — ${formatCurrency(total)}`,syncPending?'':'success');_refreshDashboard();await onSuccess();
     }catch(err){_showToast(err.message||'Could not save sale','error');}
   };
 }
