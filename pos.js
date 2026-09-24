@@ -320,6 +320,10 @@ function openCheckoutSheet(deptId, cart, parentEl, onSuccess) {
       </div>
 
       <div class="form-row">
+        <label class="form-label">Customer Name</label>
+        <input type="text" class="form-input" id="co-customer" placeholder="Customer name" autocomplete="off" />
+      </div>
+      <div class="form-row">
         <label class="form-label">Receipt No</label>
         <input type="text" class="form-input" id="co-receipt" placeholder="Auto-generated if left blank" />
       </div>
@@ -362,6 +366,8 @@ function openCheckoutSheet(deptId, cart, parentEl, onSuccess) {
   document.body.appendChild(overlay);
 
   let paymentMethod = 'cash';
+  let timeStarted = null;
+  $('#co-customer', sheet).addEventListener('focus', () => { if (!timeStarted) timeStarted = new Date().toISOString(); }, { once: true });
 
   // Payment toggle
   sheet.querySelectorAll('[data-payment]').forEach((btn) => {
@@ -383,6 +389,7 @@ function openCheckoutSheet(deptId, cart, parentEl, onSuccess) {
 
   // Confirm
   $('#co-confirm', sheet).addEventListener('click', async () => {
+    const customerName = $('#co-customer', sheet).value.trim();
     const attendant = $('#co-attendant', sheet).value.trim();
     let receiptNo = $('#co-receipt', sheet).value.trim();
     const refNo = $('#co-refno', sheet).value.trim();
@@ -390,6 +397,7 @@ function openCheckoutSheet(deptId, cart, parentEl, onSuccess) {
     if (!receiptNo) receiptNo = generateSaleId(deptId);
 
     const now = new Date();
+    if (!timeStarted) timeStarted = now.toISOString();
 
     // Save each cart item as a separate sale record (for inventory tracking)
     for (const c of cart) {
@@ -405,6 +413,11 @@ function openCheckoutSheet(deptId, cart, parentEl, onSuccess) {
         paymentMethod,
         refNo: paymentMethod !== 'cash' ? refNo : '',
         attendant: attendant || dept.name,
+        soldBy: localStorage.getItem('xclusive_staff_name') || attendant || dept.name,
+        username: (() => { try { return JSON.parse(localStorage.getItem('xclusive_currentUser') || '{}').username || ''; } catch { return ''; } })(),
+        customerName,
+        timeStarted,
+        timeSaved: now.toISOString(),
         timestamp: now.toISOString(),
         dateStr: todayStr(),
         receiptNo,
