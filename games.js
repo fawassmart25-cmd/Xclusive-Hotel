@@ -147,6 +147,7 @@ function openGameSheet(parentContainer, deptId, items, preselectedItem) {
   overlay.id = 'modal-overlay';
 
   const sheet = el('div', 'bottom-sheet');
+  let gameStartedAt = null;
   sheet.innerHTML = `
     <div class="bottom-sheet__handle"></div>
     <div class="bottom-sheet__header">
@@ -237,6 +238,9 @@ function openGameSheet(parentContainer, deptId, items, preselectedItem) {
     });
   });
 
+  sheet.addEventListener('focusin', () => { if (!sheet.dataset.timeStarted) sheet.dataset.timeStarted = new Date().toISOString(); });
+  sheet.dataset.timeStarted = gameStartedAt || '';
+
   $('#game-duration-custom', sheet).addEventListener('input', () => {
     duration = Number($('#game-duration-custom', sheet).value) || 1;
     updateGameTotal(sheet, duration);
@@ -308,7 +312,7 @@ function openGameSheet(parentContainer, deptId, items, preselectedItem) {
       paymentMethod,
       refNo: paymentMethod !== 'cash' ? refNo : '',
       attendant: attendant || 'Game Lounge',
-      startTime: now.toISOString(),
+      startTime: sheet.dataset.timeStarted || now.toISOString(),
       status: 'active',
       dateStr: todayStr(),
       syncStatus: online ? 'synced' : 'pending',
@@ -359,6 +363,10 @@ async function endSession(session) {
     paymentMethod: session.paymentMethod,
     refNo: session.refNo,
     attendant: session.attendant,
+    soldBy: localStorage.getItem('xclusive_staff_username') || localStorage.getItem('xclusive_staff_name') || session.attendant || 'Game',
+    username: localStorage.getItem('xclusive_staff_username') || '',
+    timeStarted: session.startTime,
+    timeSaved: endTime.toISOString(),
     startTime: session.startTime,
     endTime: endTime.toISOString(),
     timestamp: endTime.toISOString(),

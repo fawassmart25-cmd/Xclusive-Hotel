@@ -102,6 +102,8 @@ async function renderSalesTab(parent, deptId) {
   const cart = [];
 
   const wrap = el('div', 'pos-sales');
+  let saleStartedAt = null;
+  wrap.addEventListener('focusin', () => { if (!saleStartedAt) saleStartedAt = new Date().toISOString(); });
 
   // Search bar
   const searchBar = el('div', 'pos-search-bar');
@@ -405,6 +407,10 @@ function openCheckoutSheet(deptId, cart, parentEl, onSuccess) {
         paymentMethod,
         refNo: paymentMethod !== 'cash' ? refNo : '',
         attendant: attendant || dept.name,
+        soldBy: localStorage.getItem('xclusive_staff_username') || localStorage.getItem('xclusive_staff_name') || attendant || dept.name,
+        username: localStorage.getItem('xclusive_staff_username') || '',
+        timeStarted: saleStartedAt || now.toISOString(),
+        timeSaved: now.toISOString(),
         timestamp: now.toISOString(),
         dateStr: todayStr(),
         receiptNo,

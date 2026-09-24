@@ -62,6 +62,9 @@ export function setReceptionCallbacks({ showToast, refreshDashboard }) {
 
 export async function renderReception() {
   const container = el('div', 'dashboard');
+  window.__xclusiveSaleStarted = null;
+
+  container.addEventListener('focusin', (e) => { if (!window.__xclusiveSaleStarted && e.target.matches('input')) window.__xclusiveSaleStarted = new Date().toISOString(); });
 
   // Filter chips
   const filterRow = el('div', 'chip-row');
@@ -414,6 +417,11 @@ async function handleSellSave(room, sheet, ctx) {
     paymentMethod: ctx.paymentMethod,
     refNo: ctx.paymentMethod !== 'cash' ? refNo : '',
     attendant: attendant || 'Reception',
+    soldBy: localStorage.getItem('xclusive_staff_username') || localStorage.getItem('xclusive_staff_name') || attendant || 'Reception',
+    username: localStorage.getItem('xclusive_staff_username') || '',
+    customerName: guestName,
+    timeStarted: window.__xclusiveSaleStarted || checkInTime.toISOString(),
+    timeSaved: checkInTime.toISOString(),
     timestamp: checkInTime.toISOString(),
     dateStr: todayStr(),
     locked: true,
@@ -557,6 +565,10 @@ function openCheckoutSheet(room) {
         total: extra,
         paymentMethod: 'cash',
         attendant: 'Reception',
+        soldBy: localStorage.getItem('xclusive_staff_username') || localStorage.getItem('xclusive_staff_name') || 'Reception',
+        username: localStorage.getItem('xclusive_staff_username') || '',
+        timeStarted: window.__xclusiveSaleStarted || new Date().toISOString(),
+        timeSaved: new Date().toISOString(),
         timestamp: new Date().toISOString(),
         dateStr: todayStr(),
         locked: true,

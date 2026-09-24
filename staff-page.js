@@ -1,37 +1,20 @@
-import { getAllStaff, createStaff, updateStaff, removeStaff } from './staff.js';
+import { getAllStaff, saveStaffMember, deleteStaffMember } from './db.js';
 import { getIcon } from './icons.js';
-
-const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const roles=['admin','reception','bar','kitchen','game'];
-
-export async function renderStaffManagement(){
-  const wrap=document.createElement('div'); wrap.className='staff-page fade-in-up';
-  wrap.innerHTML=`<div class="section-header"><div><div class="section-header__title">Staff Management</div><div class="dashboard__date">Admin only · IndexedDB staff accounts</div></div></div>
-  <div class="card staff-form-card"><div class="section-header"><span class="section-header__title" id="staff-form-title">Add Staff</span></div>
-  <form id="staff-form"><input type="hidden" id="staff-id">
-    <div class="form-grid"><label>Name<input id="staff-name" class="form-input" required></label><label>Username<input id="staff-username" class="form-input" required></label><label>PIN / Password<input id="staff-pin" class="form-input" required></label><label>Role<select id="staff-role" class="form-input">${roles.map(r=>`<option value="${r}">${r}</option>`).join('')}</select></label></div>
-    <div style="display:flex;gap:8px;margin-top:16px"><button class="btn btn--primary" type="submit">Save Staff</button><button class="btn btn--secondary hidden" type="button" id="cancel-edit">Cancel</button></div>
-  </form></div>
-  <div class="card report-table-card"><div class="report-table-wrap"><table class="report-table"><thead><tr><th>Name</th><th>Username</th><th>Role</th><th>Status</th><th>Created</th><th>Actions</th></tr></thead><tbody id="staff-body"></tbody></table></div></div>`;
-  const form=wrap.querySelector('#staff-form'), body=wrap.querySelector('#staff-body'), id=wrap.querySelector('#staff-id');
-  const render=async()=>{ const staff=await getAllStaff(); body.innerHTML=staff.map(s=>`<tr><td>${esc(s.name)}</td><td>${esc(s.username)}</td><td>${esc(s.role)}</td><td><span class="status-pill ${s.isActive?'status-active':'status-inactive'}">${s.isActive?'Active':'Inactive'}</span></td><td>${new Date(s.createdAt).toLocaleDateString('en-NG')}</td><td><div class="table-actions"><button class="btn btn--secondary btn--xs" data-edit="${s.id}">Edit</button><button class="btn btn--secondary btn--xs" data-pin="${s.id}">Edit PIN</button><button class="btn btn--secondary btn--xs" data-role="${s.id}">Edit Role</button><button class="btn btn--secondary btn--xs" data-toggle="${s.id}">${s.isActive?'Deactivate':'Activate'}</button><button class="btn btn--danger btn--xs" data-delete="${s.id}">Delete</button></div></td></tr>`).join('')||`<tr><td colspan="6" class="empty-state">No staff accounts.</td></tr>`;
-    body.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>load(awaitStaff(staff,b.dataset.edit),'all'));
-  };
-  const awaitStaff=async(list,id)=>list.find(x=>x.id===id);
-  form.onsubmit=async e=>{e.preventDefault(); try{
-    const data={id:id.value||undefined,name:wrap.querySelector('#staff-name').value.trim(),username:wrap.querySelector('#staff-username').value.trim(),pin:wrap.querySelector('#staff-pin').value,role:wrap.querySelector('#staff-role').value};
-    if(id.value) await updateStaff(data); else await createStaff(data);
-    form.reset();id.value='';wrap.querySelector('#cancel-edit').classList.add('hidden');wrap.querySelector('#staff-form-title').textContent='Add Staff';await render();
-  }catch(err){alert(err.message)}};
-  wrap.querySelector('#cancel-edit').onclick=()=>{form.reset();id.value='';wrap.querySelector('#cancel-edit').classList.add('hidden');wrap.querySelector('#staff-form-title').textContent='Add Staff';};
-  const load=(s,mode)=>{if(!s)return; id.value=s.id;wrap.querySelector('#staff-name').value=s.name;wrap.querySelector('#staff-username').value=s.username;wrap.querySelector('#staff-pin').value=s.pin;wrap.querySelector('#staff-role').value=s.role;wrap.querySelector('#cancel-edit').classList.remove('hidden');wrap.querySelector('#staff-form-title').textContent='Edit Staff';};
-  body.addEventListener('click',async e=>{
-    const b=e.target.closest('button');if(!b)return;const staff=await getAllStaff(), s=staff.find(x=>x.id===(b.dataset.edit||b.dataset.pin||b.dataset.role||b.dataset.toggle||b.dataset.delete));if(!s)return;
-    if(b.dataset.edit){load(s,'all');return;}
-    if(b.dataset.pin){const pin=prompt('New PIN / Password',s.pin);if(pin!==null){s.pin=pin;await updateStaff(s);await render();}return;}
-    if(b.dataset.role){const role=prompt('Role: admin, reception, bar, kitchen, game',s.role);if(role&&roles.includes(role)){s.role=role;await updateStaff(s);await render();}return;}
-    if(b.dataset.toggle){s.isActive=!s.isActive;await updateStaff(s);await render();return;}
-    if(b.dataset.delete && confirm(`Delete ${s.name}? This permanently removes the staff record.`)){await removeStaff(s.id);await render();}
-  });
-  await render(); return wrap;
+const ROLE_NAMES={admin:'Admin',reception:'Reception',bar:'Bar',kitchen:'Kitchen',games:'Game'};
+function el(t,c='',h=''){const e=document.createElement(t);if(c)e.className=c;if(h)e.innerHTML=h;return e;}
+export async function renderStaffPage({onSaved=()=>{}}={}){
+ const root=el('div','dashboard fade-in-up');
+ root.appendChild(el('div','section-header','<span class="section-header__title">Staff Management</span>'));
+ const form=el('div','card'); form.innerHTML=`<div class="section-header"><span class="section-header__title">Add Staff</span></div><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px"><input class="form-input" id="st-name" placeholder="Full name"><input class="form-input" id="st-user" placeholder="Username"><input class="form-input" id="st-pin" placeholder="PIN / Password" type="password"><select class="form-input" id="st-role"><option value="reception">Reception</option><option value="bar">Bar</option><option value="kitchen">Kitchen</option><option value="games">Game</option><option value="admin">Admin</option></select></div><button class="btn btn--primary" id="st-save" style="margin-top:12px">${getIcon('plus',18)} Add Staff</button>`;
+ root.appendChild(form);
+ const table=el('div','card'); table.innerHTML='<div class="section-header"><span class="section-header__title">Staff Accounts</span></div><div class="table-wrap"><table><thead><tr><th>Name</th><th>Username</th><th>Role</th><th>Status</th><th>Actions</th></tr></thead><tbody id="staff-body"></tbody></table></div>';root.appendChild(table);
+ const body=table.querySelector('#staff-body');
+ async function render(){const staff=await getAllStaff();body.innerHTML='';staff.sort((a,b)=>a.name.localeCompare(b.name)).forEach(s=>{const tr=document.createElement('tr');tr.innerHTML=`<td>${s.name}</td><td>${s.username}</td><td>${ROLE_NAMES[s.role]||s.role}</td><td>${s.isActive?'Active':'Deactivated'}</td><td style="display:flex;gap:5px;flex-wrap:wrap"><button class="btn btn--ghost edit-name">Name</button><button class="btn btn--ghost edit-pin">PIN</button><button class="btn btn--ghost edit-role">Role</button><button class="btn btn--ghost toggle">${s.isActive?'Deactivate':'Activate'}</button><button class="btn btn--ghost delete">Delete</button></td>`;
+ tr.querySelector('.edit-name').onclick=async()=>{const v=prompt('New name',s.name);if(v?.trim()){s.name=v.trim();await saveStaffMember(s);await render();onSaved();}};
+ tr.querySelector('.edit-pin').onclick=async()=>{const v=prompt('New PIN / password',s.pin||s.password||'');if(v){s.pin=v;await saveStaffMember(s);await render();}};
+ tr.querySelector('.edit-role').onclick=async()=>{const v=prompt('Role: admin, reception, bar, kitchen, games',s.role);if(v&&ROLE_NAMES[v]){s.role=v;await saveStaffMember(s);await render();}};
+ tr.querySelector('.toggle').onclick=async()=>{s.isActive=!s.isActive;await saveStaffMember(s);await render();};
+ tr.querySelector('.delete').onclick=async()=>{if(confirm(`Delete ${s.name}?`)){await deleteStaffMember(s.id);await render();}};body.appendChild(tr);});}
+ form.querySelector('#st-save').onclick=async()=>{const name=form.querySelector('#st-name').value.trim(),username=form.querySelector('#st-user').value.trim().toLowerCase(),pin=form.querySelector('#st-pin').value.trim(),role=form.querySelector('#st-role').value;if(!name||!username||!pin){alert('Name, username and PIN are required.');return;}try{await saveStaffMember({id:`staff-${username}-${Date.now()}`,name,username,pin,role,isActive:true,createdAt:new Date().toISOString()});form.querySelectorAll('input').forEach(i=>i.value='');await render();onSaved();}catch(e){alert('Could not save staff. Username may already exist.');}};
+ await render(); return root;
 }

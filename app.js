@@ -37,19 +37,24 @@ import {
   syncToGoogleSheets,
   pushPricesToSheets,
 } from './sync.js';
-import { getStaffByRole, verifyPin } from './staff.js';
+import { getStaffByRole, getSeedStaff } from './staff.js';
+import { getAllStaff, saveStaffMember, getStaffByUsername } from './db.js';
+import { renderReports } from './reports.js';
+import { renderStaffPage } from './staff-page.js';
 
 // ── State ────────────────────────────────────────────────────
 const state = {
   currentRole: null,
   currentTab: null,
   currentStaffName: null,
+  currentUsername: null,
   online: navigator.onLine,
 };
 
 const STORAGE_KEYS = {
   role: 'xclusive_role',
   staffName: 'xclusive_staff_name',
+  username: 'xclusive_staff_username',
 };
 
 // ── DOM Helpers ──────────────────────────────────────────────
@@ -170,10 +175,10 @@ function createRoleCard(role, isAdmin) {
   return card;
 }
 
-function selectRole(role) {
-  state.currentRole = role;
-  state.currentTab = null;
-  renderPinScreen(role);
+async function selectRole(role) {
+  const all = await getAllStaff();
+  state.loginStaff = all.filter(s => s.role === role.id && s.isActive !== false);
+  state.currentRole = role; state.currentTab = null; renderPinScreen(role);
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -184,7 +189,7 @@ function renderPinScreen(role) {
   const app = $('#app');
   clearNode(app);
 
-  const staffList = getStaffByRole(role.id);
+  const staffList = state.loginStaff || [];
   const screen = el('div', 'login-screen');
 
   screen.innerHTML = `
@@ -259,11 +264,15 @@ function renderPinScreen(role) {
     const pin = pinInput.value;
     if (pin.length < 4) { errorDiv.textContent = 'Enter 4-digit PIN'; return; }
 
-    if (verifyPin(role.id, name, pin)) {
-      state.currentStaffName = name;
+    const member = state.loginStaff.find(s => s.name === name && String(s.pin || s.password || '') === pin && s.isActive !== false);
+    if (member) {
+      state.currentStaffName = member.name;
+      state.currentUsername = member.username;
       localStorage.setItem(STORAGE_KEYS.role, role.id);
-      localStorage.setItem(STORAGE_KEYS.staffName, name);
-      showToast(`Welcome, ${name}`, 'success');
+      localStorage.setItem(STORAGE_KEYS.staffName, member.name);
+      localStorage.setItem(STORAGE_KEYS.username, member.username);
+      localStorage.setItem('xclusive_current_user', JSON.stringify({id:member.id,name:member.name,username:member.username,role:member.role}));
+      showToast(`Welcome, ${member.name}`, 'success');
       renderApp();
     } else {
       errorDiv.textContent = 'Wrong PIN — try again';
@@ -315,8 +324,11 @@ function buildTabList(role, activeDepts) {
   const tabs = [];
   if (role.isAdmin) tabs.push({ id: 'dashboard', name: 'Home', icon: 'grid', type: 'dashboard' });
   activeDepts.forEach((dept) => tabs.push({ id: dept.id, name: dept.shortName, icon: dept.icon, type: 'department', dept }));
+  if (role.isAdmin || role.id === 'reception') tabs.push({ id: 'reports', name: 'Reports', icon: 'chart', type: 'reports' });
   if (role.isAdmin) {
+    tabs.push({ id: 'analysis', name: 'Analysis', icon: 'chart', type: 'reports' });
     tabs.push({ id: 'pricemanager', name: 'Prices', icon: 'tag', type: 'pricemanager' });
+    tabs.push({ id: 'staff', name: 'Staff', icon: 'users', type: 'staff' });
     tabs.push({ id: 'settings', name: 'Admin', icon: 'settings', type: 'settings' });
   }
   if (tabs.length === 0) tabs.push({ id: 'dashboard', name: 'Home', icon: 'grid', type: 'dashboard' });
@@ -382,6 +394,9 @@ async function renderContent(tabId, role) {
   if (tabId === 'reception') { content.appendChild(await renderReception()); return; }
   if (tabId === 'bar' || tabId === 'kitchen') { content.appendChild(await renderPOS(tabId)); return; }
   if (tabId === 'games') { content.appendChild(await renderGames()); return; }
+  if (tabId === 'reports') { content.appendChild(await renderReports({title:'Reports', canClear:role.isAdmin})); return; }
+  if (tabId === 'analysis') { content.appendChild(await renderReports({title:'Analytics'})); return; }
+  if (tabId === 'staff' && role.isAdmin) { content.appendChild(await renderStaffPage()); return; }
 
   const wrapper = el('div', 'fade-in-up');
 
@@ -775,8 +790,8 @@ function renderSettings(role) {
     { icon: 'cloud', label: 'Sync Setup', desc: 'Google Sheets integration', tab: null, active: true, action: 'sync' },
     { icon: 'upload', label: 'Export Data', desc: 'Download sales as CSV', tab: null, active: true, action: 'export' },
     { icon: 'github', label: 'Push to GitHub', desc: 'Deploy to Netlify', tab: null, active: true, action: 'deploy' },
-    { icon: 'chart', label: 'Reports', desc: 'View & export reports', tab: null, active: false },
-    { icon: 'users', label: 'Staff', desc: 'Manage staff & roles', tab: null, active: false },
+    { icon: 'chart', label: 'Reports', desc: 'View & export reports', tab: 'reports', active: true },
+    { icon: 'users', label: 'Staff', desc: 'Manage staff & roles', tab: 'staff', active: true },
   ];
 
   adminActions.forEach((action) => {
@@ -1088,8 +1103,11 @@ function logout() {
   state.currentRole = null;
   state.currentTab = null;
   state.currentStaffName = null;
+  state.currentUsername = null;
   localStorage.removeItem(STORAGE_KEYS.role);
   localStorage.removeItem(STORAGE_KEYS.staffName);
+  localStorage.removeItem(STORAGE_KEYS.username);
+  localStorage.removeItem('xclusive_current_user');
   showToast('Signed out', '');
   renderLogin();
 }
@@ -1134,22 +1152,33 @@ async function updateOnlineStatus() {
 //  INIT
 // ═══════════════════════════════════════════════════════════════
 
-function init() {
-  const savedRoleId = localStorage.getItem(STORAGE_KEYS.role);
-  const savedStaffName = localStorage.getItem(STORAGE_KEYS.staffName);
-  if (savedRoleId) {
-    const role = getRoleById(savedRoleId);
-    if (role && role.active) {
-      state.currentRole = role;
-      state.currentStaffName = savedStaffName || null;
-    }
-  }
+async function seedStaffStore() {
+  const existing = await getAllStaff();
+  if (existing.length) return existing;
+  const seeds = getSeedStaff();
+  for (const member of seeds) await saveStaffMember(member);
+  return seeds;
+}
 
+async function init() {
+  await seedStaffStore();
+  const savedRoleId = localStorage.getItem(STORAGE_KEYS.role);
+  const savedUsername = localStorage.getItem(STORAGE_KEYS.username);
+  const savedStaffName = localStorage.getItem(STORAGE_KEYS.staffName);
+  if (savedUsername) {
+    const member = await getStaffByUsername(savedUsername);
+    const role = member ? getRoleById(member.role) : null;
+    if (member && member.isActive !== false && role && role.active) {
+      state.currentRole = role; state.currentStaffName = member.name; state.currentUsername = member.username;
+    } else { logout(); return; }
+  } else if (savedRoleId && savedStaffName) {
+    // Legacy login migration: validate against seeded/persistent staff by name.
+    const all = await getAllStaff(); const member = all.find(s=>s.name===savedStaffName && s.role===savedRoleId && s.isActive!==false);
+    if (member) { state.currentRole=getRoleById(member.role); state.currentStaffName=member.name; state.currentUsername=member.username; localStorage.setItem(STORAGE_KEYS.username,member.username); }
+  }
   window.addEventListener('online', updateOnlineStatus);
   window.addEventListener('offline', updateOnlineStatus);
-
-  if (state.currentRole && state.currentStaffName) renderApp();
-  else renderLogin();
+  if (state.currentRole && state.currentStaffName) renderApp(); else renderLogin();
 }
 
 init();

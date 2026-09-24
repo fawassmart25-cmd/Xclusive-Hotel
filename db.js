@@ -4,7 +4,7 @@
 // ═══════════════════════════════════════════════════════════
 
 const DB_NAME = 'xclusive_hotel';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 
 let dbPromise = null;
 
@@ -45,6 +45,13 @@ function openDB() {
         const store = db.createObjectStore('gameSessions', { keyPath: 'id' });
         store.createIndex('by_status', 'status', { unique: false });
         store.createIndex('by_date', 'dateStr', { unique: false });
+      }
+
+      if (!db.objectStoreNames.contains('staff')) {
+        const store = db.createObjectStore('staff', { keyPath: 'id' });
+        store.createIndex('by_username', 'username', { unique: true });
+        store.createIndex('by_role', 'role', { unique: false });
+        store.createIndex('by_active', 'isActive', { unique: false });
       }
     };
 
@@ -140,7 +147,10 @@ export function generateSaleId(dept) {
 }
 
 export function todayStr() {
-  return new Date().toISOString().slice(0, 10);
+  const d = new Date();
+  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Lagos', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(d);
+  const map = Object.fromEntries(parts.map(p => [p.type, p.value]));
+  return `${map.year}-${map.month}-${map.day}`;
 }
 
 // ── Stock In (Bar/Kitchen inventory additions) ──────────────
@@ -226,3 +236,11 @@ export function generateId(prefix) {
   const rand = Math.random().toString(36).slice(2, 6).toUpperCase();
   return `${prefix}-${ts}${rand}`;
 }
+
+
+// ── Staff ────────────────────────────────────────────────────
+export async function saveStaffMember(staff) { const store=await tx('staff','readwrite'); return reqToPromise(store.put(staff)); }
+export async function getAllStaff() { const store=await tx('staff'); return reqToPromise(store.getAll()); }
+export async function getStaffMember(id) { const store=await tx('staff'); return reqToPromise(store.get(id)); }
+export async function getStaffByUsername(username) { const store=await tx('staff'); return reqToPromise(store.index('by_username').get(username)); }
+export async function deleteStaffMember(id) { const store=await tx('staff','readwrite'); return reqToPromise(store.delete(id)); }
