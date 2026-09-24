@@ -4,7 +4,7 @@
 // ═══════════════════════════════════════════════════════════
 
 const DB_NAME = 'xclusive_hotel';
-const DB_VERSION = 3;
+const DB_VERSION = 2;
 
 let dbPromise = null;
 
@@ -45,13 +45,6 @@ function openDB() {
         const store = db.createObjectStore('gameSessions', { keyPath: 'id' });
         store.createIndex('by_status', 'status', { unique: false });
         store.createIndex('by_date', 'dateStr', { unique: false });
-      }
-
-      if (!db.objectStoreNames.contains('staff')) {
-        const store = db.createObjectStore('staff', { keyPath: 'id' });
-        store.createIndex('by_username', 'username', { unique: false });
-        store.createIndex('by_role', 'role', { unique: false });
-        store.createIndex('by_active', 'isActive', { unique: false });
       }
     };
 
@@ -232,33 +225,4 @@ export function generateId(prefix) {
   const ts = Date.now().toString(36).toUpperCase();
   const rand = Math.random().toString(36).slice(2, 6).toUpperCase();
   return `${prefix}-${ts}${rand}`;
-}
-
-
-// ── Staff ────────────────────────────────────────────────────
-export async function saveStaffMember(staff) {
-  const store = await tx('staff', 'readwrite');
-  return reqToPromise(store.put(staff));
-}
-export async function getAllStaff() {
-  const store = await tx('staff');
-  return reqToPromise(store.getAll());
-}
-export async function getStaffMember(id) {
-  const store = await tx('staff');
-  return reqToPromise(store.get(id));
-}
-export async function deleteStaffMember(id) {
-  const store = await tx('staff', 'readwrite');
-  return reqToPromise(store.delete(id));
-}
-export async function findStaffByUsername(username) {
-  const store = await tx('staff');
-  const idx = store.index('by_username');
-  const matches = await reqToPromise(idx.getAll());
-  return matches.find((s) => s.username.toLowerCase() === String(username || '').trim().toLowerCase()) || null;
-}
-export async function clearSales() {
-  const store = await tx('sales', 'readwrite');
-  return reqToPromise(store.clear());
 }

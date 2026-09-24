@@ -958,8 +958,8 @@ input, textarea, select {
   transform: scale(0.97);
 }
 
-/* ── Action status ─────────────────────────────────────────── */
-.action-status {
+/* ── Coming soon placeholder ───────────────────────────────── */
+.coming-soon {
   text-align: center;
   font-size: 11px;
   color: var(--ink-200);
@@ -2659,29 +2659,3 @@ select.form-input {
   border-radius: var(--r-full);
   white-space: nowrap;
 }
-
-/* Phase 5 — Auth / Reports / Staff */
-.auth-card{background:var(--ink-800);border:1px solid var(--ink-600);border-radius:var(--r-lg);padding:var(--lg);box-shadow:0 12px 40px rgba(0,0,0,.25)}
-.auth-error{min-height:20px;color:var(--error-400);font-size:12px;margin:4px 0 12px}
-.reports-actions{display:flex;gap:8px;flex-wrap:wrap}
-.reports-filters{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:16px}
-.reports-filters label,.form-grid label{font-size:12px;color:var(--ink-200);display:flex;flex-direction:column;gap:6px}
-.highlight-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-.highlight-grid>div{background:var(--ink-700);border:1px solid var(--ink-600);border-radius:var(--r-md);padding:14px;display:flex;flex-direction:column;gap:5px}
-.highlight-grid span{font-size:11px;color:var(--ink-200)}
-.highlight-grid strong{font-size:14px;color:var(--gold-300)}
-.report-table-card{overflow:hidden}
-.report-table-wrap{overflow:auto}
-.report-table{width:100%;border-collapse:collapse;min-width:1050px}
-.report-table th,.report-table td{padding:10px 12px;border-bottom:1px solid var(--ink-600);text-align:left;font-size:12px;white-space:nowrap}
-.report-table th{color:var(--gold-300);font-weight:600;background:var(--ink-700);position:sticky;top:0}
-.report-table td{color:var(--ink-100)}
-.staff-form-card{margin-bottom:16px}
-.form-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
-.table-actions{display:flex;gap:5px;flex-wrap:wrap}
-.btn--xs{font-size:10px;padding:5px 8px}
-.btn--danger{background:var(--error-900);color:var(--error-400);border:1px solid var(--error-400)}
-.status-pill{display:inline-flex;padding:3px 8px;border-radius:999px;font-size:10px;font-weight:600}
-.status-active{background:var(--success-900);color:var(--success-400)}
-.status-inactive{background:var(--error-900);color:var(--error-400)}
-@media(max-width:700px){.reports-filters,.form-grid,.highlight-grid{grid-template-columns:1fr}.reports-actions{width:100%}.reports-actions .btn{flex:1}}

@@ -37,23 +37,19 @@ import {
   syncToGoogleSheets,
   pushPricesToSheets,
 } from './sync.js';
-import { seedStaff, authenticate, getAllStaff, createStaff, updateStaff, removeStaff, STAFF_ROLES } from './staff.js';
-import { renderReports } from './reports.js';
-import { renderStaffManagement } from './staff-page.js';
+import { getStaffByRole, verifyPin } from './staff.js';
 
 // ── State ────────────────────────────────────────────────────
 const state = {
   currentRole: null,
   currentTab: null,
   currentStaffName: null,
-  currentUser: null,
   online: navigator.onLine,
 };
 
 const STORAGE_KEYS = {
   role: 'xclusive_role',
   staffName: 'xclusive_staff_name',
-  user: 'xclusive_currentUser',
 };
 
 // ── DOM Helpers ──────────────────────────────────────────────
@@ -116,64 +112,171 @@ setGamesCallbacks({
 });
 
 // ═══════════════════════════════════════════════════════════════
-//  AUTHENTICATION — IndexedDB staff accounts
+//  LOGIN SCREEN
 // ═══════════════════════════════════════════════════════════════
 
-async function renderLogin(errorMessage = '') {
-  const app = $('#app'); clearNode(app);
-  await seedStaff();
+function renderLogin() {
+  const app = $('#app');
+  clearNode(app);
+
+  const roles = getActiveRoles();
+  const adminRoles = roles.filter((r) => r.isAdmin);
+  const staffRoles = roles.filter((r) => !r.isAdmin);
+
   const screen = el('div', 'login-screen');
   screen.innerHTML = `
     <div class="login-screen__header fade-in-up">
       <div class="login-screen__logo">${getIcon('hotel', 36)}</div>
       <h1 class="login-screen__title">${APP_CONFIG.name}</h1>
-      <p class="login-screen__subtitle">Sign in with your staff account</p>
+      <p class="login-screen__subtitle">Select your role to continue</p>
     </div>
-    <form class="auth-card fade-in-up" id="login-form">
-      <div class="form-row"><label class="form-label">Username</label><input id="login-username" class="form-input" autocomplete="username" required></div>
-      <div class="form-row"><label class="form-label">PIN / Password</label><input id="login-pin" class="form-input" type="password" inputmode="numeric" autocomplete="current-password" required></div>
-      <div class="auth-error" id="login-error">${errorMessage}</div>
-      <button class="btn btn--primary btn--full" type="submit">${getIcon('lock',18)} Sign In</button>
-    </form>
-    <p style="text-align:center;font-size:11px;color:var(--ink-200);margin-top:auto;padding-top:var(--xl);">XCLUSIVE LATAGATI HOTEL · Offline-first</p>`;
-  app.appendChild(screen);
-  $('#login-form').addEventListener('submit', async e => {
-    e.preventDefault();
-    const username=$('#login-username').value.trim(), pin=$('#login-pin').value;
-    const user=await authenticate(username,pin);
-    if(!user){ $('#login-error').textContent='Invalid username/PIN or inactive account'; return; }
-    state.currentUser=user; state.currentRole=getRoleById(user.role) || {id:user.role,name:user.role};
-    state.currentStaffName=user.name; state.currentTab=null;
-    localStorage.setItem(STORAGE_KEYS.user, JSON.stringify(user));
-    localStorage.setItem(STORAGE_KEYS.role,user.role);
-    localStorage.setItem(STORAGE_KEYS.staffName,user.name);
-    history.replaceState({},'', user.role==='admin'?'/':'/'+(user.role==='game'?'game':user.role));
-    renderApp();
-  });
-}
+  `;
 
-function accessAllowed(role, tabId) {
-  if (!role) return false;
-  if (role === 'admin') return true;
-  if (role === 'reception') return ['reception','bar','kitchen','games','reports','analysis'].includes(tabId);
-  return (role === 'bar' && tabId === 'bar') || (role === 'kitchen' && tabId === 'kitchen') || (role === 'game' && tabId === 'games');
-}
-
-function guardRoute(tabId, roleId = state.currentRole?.id) {
-  if (!roleId || !accessAllowed(roleId, tabId)) {
-    const label = roleId === 'bar' ? 'Bar' : roleId === 'kitchen' ? 'Kitchen' : roleId === 'game' ? 'Game' : roleId === 'reception' ? 'Reception' : 'Staff';
-    showAccessDenied(label, roleId);
-    return false;
+  if (adminRoles.length > 0) {
+    const adminLabel = el('div', 'login-screen__label', 'Administrator');
+    screen.appendChild(adminLabel);
+    const adminGrid = el('div', 'role-grid');
+    adminRoles.forEach((role) => adminGrid.appendChild(createRoleCard(role, true)));
+    screen.appendChild(adminGrid);
   }
-  return true;
+
+  if (staffRoles.length > 0) {
+    const staffLabel = el('div', 'login-screen__label', 'Staff');
+    screen.appendChild(staffLabel);
+    const staffGrid = el('div', 'role-grid stagger');
+    staffRoles.forEach((role) => staffGrid.appendChild(createRoleCard(role, false)));
+    screen.appendChild(staffGrid);
+  }
+
+  screen.appendChild(el('div', '', `
+    <p style="text-align:center; font-size:11px; color:var(--ink-200); margin-top:auto; padding-top:var(--xl);">
+      v${APP_CONFIG.version} · Offline-first
+    </p>
+  `));
+
+  app.appendChild(screen);
 }
 
-function showAccessDenied(label, roleId) {
-  const target = roleId === 'bar' ? 'bar' : roleId === 'kitchen' ? 'kitchen' : roleId === 'game' ? 'games' : roleId === 'reception' ? 'reception' : 'dashboard';
-  showToast(`ACCESS DENIED - ${label} Staff Only`, 'error');
-  state.currentTab=target;
-  history.replaceState({},'',target==='games'?'/game':'/'+target);
-  renderApp();
+function createRoleCard(role, isAdmin) {
+  const card = el('div', `role-card ${isAdmin ? 'role-card--admin' : ''} fade-in-up`);
+  card.innerHTML = `
+    <div class="role-card__icon">${getIcon(role.icon, 24)}</div>
+    <div class="role-card__content" style="${isAdmin ? 'flex:1' : ''}">
+      <div class="role-card__name">${role.name}</div>
+      <div class="role-card__desc">${role.description}</div>
+    </div>
+  `;
+  card.addEventListener('click', () => selectRole(role));
+  return card;
+}
+
+function selectRole(role) {
+  state.currentRole = role;
+  state.currentTab = null;
+  renderPinScreen(role);
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  PIN SCREEN — Select name + enter PIN
+// ═══════════════════════════════════════════════════════════════
+
+function renderPinScreen(role) {
+  const app = $('#app');
+  clearNode(app);
+
+  const staffList = getStaffByRole(role.id);
+  const screen = el('div', 'login-screen');
+
+  screen.innerHTML = `
+    <div class="login-screen__header fade-in-up">
+      <div class="login-screen__logo" style="width:56px; height:56px;">
+        ${getIcon(role.icon, 28)}
+      </div>
+      <h1 class="login-screen__title" style="font-size:22px;">${role.name}</h1>
+      <p class="login-screen__subtitle">Select your name and enter your PIN</p>
+    </div>
+
+    <div class="pin-screen fade-in-up" style="animation-delay:0.1s;">
+      <div class="form-row">
+        <label class="form-label">Your Name</label>
+        <select class="form-input" id="pin-staff-select">
+          ${staffList.map((s) => `<option value="${s.name}">${s.name}</option>`).join('')}
+        </select>
+      </div>
+
+      <div class="form-row">
+        <label class="form-label">PIN</label>
+        <input type="password" inputmode="numeric" maxlength="4" class="form-input pin-input" id="pin-input" placeholder="••••" autocomplete="off" />
+      </div>
+
+      <div class="pin-dots" id="pin-dots">
+        <span class="pin-dot"></span>
+        <span class="pin-dot"></span>
+        <span class="pin-dot"></span>
+        <span class="pin-dot"></span>
+      </div>
+
+      <button class="btn btn--primary btn--full" id="pin-submit-btn">
+        ${getIcon('lock', 20)}<span>Unlock</span>
+      </button>
+
+      <button class="btn btn--ghost btn--full" id="pin-back-btn" style="margin-top:var(--sm);">
+        ${getIcon('back', 20)}<span>Back to Roles</span>
+      </button>
+
+      <div class="pin-error" id="pin-error"></div>
+    </div>
+  `;
+
+  app.appendChild(screen);
+
+  const pinInput = $('#pin-input', screen);
+  const pinDots = $('#pin-dots', screen);
+  const submitBtn = $('#pin-submit-btn', screen);
+  const backBtn = $('#pin-back-btn', screen);
+  const errorDiv = $('#pin-error', screen);
+
+  pinInput.focus();
+
+  pinInput.addEventListener('input', () => {
+    const val = pinInput.value.replace(/\D/g, '').slice(0, 4);
+    pinInput.value = val;
+    updatePinDots(pinDots, val.length);
+    errorDiv.textContent = '';
+    if (val.length === 4) attemptPin();
+  });
+
+  submitBtn.addEventListener('click', attemptPin);
+  pinInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') attemptPin(); });
+
+  backBtn.addEventListener('click', () => {
+    state.currentRole = null;
+    renderLogin();
+  });
+
+  function attemptPin() {
+    const name = $('#pin-staff-select', screen).value;
+    const pin = pinInput.value;
+    if (pin.length < 4) { errorDiv.textContent = 'Enter 4-digit PIN'; return; }
+
+    if (verifyPin(role.id, name, pin)) {
+      state.currentStaffName = name;
+      localStorage.setItem(STORAGE_KEYS.role, role.id);
+      localStorage.setItem(STORAGE_KEYS.staffName, name);
+      showToast(`Welcome, ${name}`, 'success');
+      renderApp();
+    } else {
+      errorDiv.textContent = 'Wrong PIN — try again';
+      pinInput.value = '';
+      updatePinDots(pinDots, 0);
+      pinInput.focus();
+    }
+  }
+}
+
+function updatePinDots(container, filled) {
+  const dots = container.querySelectorAll('.pin-dot');
+  dots.forEach((dot, i) => dot.classList.toggle('filled', i < filled));
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -189,11 +292,10 @@ function renderApp() {
 
   const activeDepts = getActiveDepartments();
   const tabs = buildTabList(role, activeDepts);
-  const pathTab = ({'/reception':'reception','/bar':'bar','/kitchen':'kitchen','/game':'games','/games':'games','/reports':'reports','/analysis':'analysis','/staff':'staff','/':'dashboard'})[location.pathname];
-  if (pathTab && guardRoute(pathTab, role.id)) state.currentTab = pathTab;
+
   if (!state.currentTab || !tabs.find((t) => t.id === state.currentTab)) {
-    const fallback = role.id === 'admin' ? 'dashboard' : role.id === 'reception' ? 'reception' : role.id === 'bar' ? 'bar' : role.id === 'kitchen' ? 'kitchen' : 'games';
-    state.currentTab = tabs.find(t => t.id === fallback)?.id || tabs[0].id;
+    state.currentTab = role.landingTab && tabs.find((t) => t.id === role.landingTab)
+      ? role.landingTab : tabs[0].id;
   }
 
   const shell = el('div', 'app-shell fade-in');
@@ -210,17 +312,17 @@ function renderApp() {
 }
 
 function buildTabList(role, activeDepts) {
-  const tabs=[];
-  const add=(id,name,icon,type='page')=>tabs.push({id,name,icon,type});
-  if(role.isAdmin){ add('dashboard','Home','grid'); }
-  if(role.id==='reception' || role.isAdmin){ add('reception','Rooms','door','department'); }
-  if(role.id==='reception' || role.id==='bar' || role.isAdmin){ add('bar','Bar','wine','department'); }
-  if(role.id==='reception' || role.id==='kitchen' || role.isAdmin){ add('kitchen','Kitchen','utensils','department'); }
-  if(role.id==='reception' || role.id==='game' || role.isAdmin){ add('games','Game','gamepad','department'); }
-  if(role.id==='reception' || role.isAdmin) { add('reports','Reports','receipt'); add('analysis','Analysis','chart'); }
-  if(role.isAdmin){ add('pricemanager','Prices','tag'); add('staff','Staff','users'); add('settings','Admin','settings'); }
+  const tabs = [];
+  if (role.isAdmin) tabs.push({ id: 'dashboard', name: 'Home', icon: 'grid', type: 'dashboard' });
+  activeDepts.forEach((dept) => tabs.push({ id: dept.id, name: dept.shortName, icon: dept.icon, type: 'department', dept }));
+  if (role.isAdmin) {
+    tabs.push({ id: 'pricemanager', name: 'Prices', icon: 'tag', type: 'pricemanager' });
+    tabs.push({ id: 'settings', name: 'Admin', icon: 'settings', type: 'settings' });
+  }
+  if (tabs.length === 0) tabs.push({ id: 'dashboard', name: 'Home', icon: 'grid', type: 'dashboard' });
   return tabs;
 }
+
 function buildTopBar(role) {
   const bar = el('div', 'top-bar');
   bar.innerHTML = `
@@ -258,11 +360,8 @@ function buildBottomNav(tabs) {
 }
 
 function switchTab(tabId) {
-  if (!guardRoute(tabId, state.currentRole?.id)) return;
   if (tabId === state.currentTab) return;
   state.currentTab = tabId;
-  const routeMap={dashboard:'/',reception:'/reception',bar:'/bar',kitchen:'/kitchen',games:'/game',reports:'/reports',analysis:'/analysis',staff:'/staff',pricemanager:'/prices',settings:'/settings'};
-  history.pushState({},'',routeMap[tabId]||'/');
   document.querySelectorAll('.nav-item').forEach((item) => {
     item.classList.toggle('active', item.dataset.tabId === tabId);
   });
@@ -280,7 +379,6 @@ async function renderContent(tabId, role) {
   if (!content) return;
   clearNode(content);
 
-  if (!guardRoute(tabId, role.id)) return;
   if (tabId === 'reception') { content.appendChild(await renderReception()); return; }
   if (tabId === 'bar' || tabId === 'kitchen') { content.appendChild(await renderPOS(tabId)); return; }
   if (tabId === 'games') { content.appendChild(await renderGames()); return; }
@@ -293,10 +391,6 @@ async function renderContent(tabId, role) {
     wrapper.appendChild(renderSettings(role));
   } else if (tabId === 'pricemanager') {
     wrapper.appendChild(renderPriceManager());
-  } else if (tabId === 'reports' || tabId === 'analysis') {
-    wrapper.appendChild(await renderReports({showToast, title: tabId === 'analysis' ? 'Analytics' : 'Reports'}));
-  } else if (tabId === 'staff') {
-    wrapper.appendChild(await renderStaffManagement());
   } else {
     wrapper.appendChild(renderGenericEmpty());
   }
@@ -681,8 +775,8 @@ function renderSettings(role) {
     { icon: 'cloud', label: 'Sync Setup', desc: 'Google Sheets integration', tab: null, active: true, action: 'sync' },
     { icon: 'upload', label: 'Export Data', desc: 'Download sales as CSV', tab: null, active: true, action: 'export' },
     { icon: 'github', label: 'Push to GitHub', desc: 'Deploy to Netlify', tab: null, active: true, action: 'deploy' },
-    { icon: 'chart', label: 'Reports', desc: 'View & export reports', tab: 'reports', active: true },
-    { icon: 'users', label: 'Staff', desc: 'Manage staff & roles', tab: 'staff', active: true },
+    { icon: 'chart', label: 'Reports', desc: 'View & export reports', tab: null, active: false },
+    { icon: 'users', label: 'Staff', desc: 'Manage staff & roles', tab: null, active: false },
   ];
 
   adminActions.forEach((action) => {
@@ -693,7 +787,7 @@ function renderSettings(role) {
       <div style="font-size:15px; font-weight:600; color:var(--ink-100);">${action.label}</div>
       <div class="stat-card__label">${action.desc}</div>
       <div style="margin-top:auto; padding-top:var(--sm);">
-        <span class="action-status">${action.active ? 'Open' : 'Unavailable'}</span>
+        <span class="coming-soon">${action.active ? 'Open' : 'Coming soon'}</span>
       </div>
     `;
     if (action.active) {
@@ -996,7 +1090,6 @@ function logout() {
   state.currentStaffName = null;
   localStorage.removeItem(STORAGE_KEYS.role);
   localStorage.removeItem(STORAGE_KEYS.staffName);
-  localStorage.removeItem(STORAGE_KEYS.user);
   showToast('Signed out', '');
   renderLogin();
 }
@@ -1041,19 +1134,22 @@ async function updateOnlineStatus() {
 //  INIT
 // ═══════════════════════════════════════════════════════════════
 
-async function init() {
-  await seedStaff();
-  const raw=localStorage.getItem(STORAGE_KEYS.user);
-  const savedRole=localStorage.getItem(STORAGE_KEYS.role);
-  if(raw){
-    try { state.currentUser=JSON.parse(raw); state.currentRole=getRoleById(state.currentUser.role); state.currentStaffName=state.currentUser.name; } catch {}
-  } else if(savedRole){
-    // Legacy sessions are not trusted as authenticated staff; require login.
-    localStorage.removeItem(STORAGE_KEYS.role); localStorage.removeItem(STORAGE_KEYS.staffName);
+function init() {
+  const savedRoleId = localStorage.getItem(STORAGE_KEYS.role);
+  const savedStaffName = localStorage.getItem(STORAGE_KEYS.staffName);
+  if (savedRoleId) {
+    const role = getRoleById(savedRoleId);
+    if (role && role.active) {
+      state.currentRole = role;
+      state.currentStaffName = savedStaffName || null;
+    }
   }
+
   window.addEventListener('online', updateOnlineStatus);
   window.addEventListener('offline', updateOnlineStatus);
-  window.addEventListener('popstate',()=>{ if(state.currentRole) renderApp(); });
-  if(state.currentUser && state.currentRole) renderApp(); else renderLogin();
+
+  if (state.currentRole && state.currentStaffName) renderApp();
+  else renderLogin();
 }
+
 init();

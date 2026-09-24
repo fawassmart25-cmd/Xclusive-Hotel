@@ -247,10 +247,6 @@ function openGameSheet(parentContainer, deptId, items, preselectedItem) {
     updateGameTotal(sheet, duration);
   });
 
-  let timeStarted = null;
-  const customerInput = $('#game-customer', sheet);
-  if (customerInput) customerInput.addEventListener('focus', () => { if (!timeStarted) timeStarted = new Date().toISOString(); }, { once: true });
-
   // Payment toggle
   sheet.querySelectorAll('[data-payment]').forEach((btn) => {
     btn.addEventListener('click', (e) => {
@@ -297,7 +293,6 @@ function openGameSheet(parentContainer, deptId, items, preselectedItem) {
 
     const total = typePrice * duration;
     const now = new Date();
-    if (!timeStarted) timeStarted = now.toISOString();
     const sessionId = generateId('GS');
 
     // Save session
@@ -313,10 +308,6 @@ function openGameSheet(parentContainer, deptId, items, preselectedItem) {
       paymentMethod,
       refNo: paymentMethod !== 'cash' ? refNo : '',
       attendant: attendant || 'Game Lounge',
-      soldBy: localStorage.getItem('xclusive_staff_name') || attendant || 'Game Lounge',
-      username: (() => { try { return JSON.parse(localStorage.getItem('xclusive_currentUser') || '{}').username || ''; } catch { return ''; } })(),
-      timeStarted,
-      timeSaved: null,
       startTime: now.toISOString(),
       status: 'active',
       dateStr: todayStr(),
@@ -368,11 +359,6 @@ async function endSession(session) {
     paymentMethod: session.paymentMethod,
     refNo: session.refNo,
     attendant: session.attendant,
-    soldBy: session.soldBy || session.attendant,
-    username: session.username || '',
-    customerName: session.customerName,
-    timeStarted: session.timeStarted || session.startTime,
-    timeSaved: endTime.toISOString(),
     startTime: session.startTime,
     endTime: endTime.toISOString(),
     timestamp: endTime.toISOString(),

@@ -276,14 +276,12 @@ function openSellSheet(room) {
   let stayType = 'lodge';
   let paymentMethod = 'cash';
   let timestampLocked = false;
-  let timeStarted = null;
 
   // Lock timestamp when user starts typing
   const guestInput = $('#sell-guest-name', sheet);
   guestInput.addEventListener('input', () => {
     if (!timestampLocked) {
       timestampLocked = true;
-      timeStarted = new Date().toISOString();
       $('#sell-checkin', sheet).value = new Date().toLocaleString('en-NG', { dateStyle: 'short', timeStyle: 'short' });
     }
   });
@@ -399,7 +397,6 @@ async function handleSellSave(room, sheet, ctx) {
   const checkOutTime = checkoutVal ? new Date(checkoutVal) : new Date(Date.now() + 24 * 3600000);
 
   const saleId = generateSaleId('reception');
-  if (!timeStarted) timeStarted = checkInTime.toISOString();
 
   const sale = {
     id: saleId,
@@ -417,11 +414,6 @@ async function handleSellSave(room, sheet, ctx) {
     paymentMethod: ctx.paymentMethod,
     refNo: ctx.paymentMethod !== 'cash' ? refNo : '',
     attendant: attendant || 'Reception',
-    soldBy: localStorage.getItem('xclusive_staff_name') || attendant || 'Reception',
-    username: (() => { try { return JSON.parse(localStorage.getItem('xclusive_currentUser') || '{}').username || ''; } catch { return ''; } })(),
-    customerName: guestName,
-    timeStarted,
-    timeSaved: new Date().toISOString(),
     timestamp: checkInTime.toISOString(),
     dateStr: todayStr(),
     locked: true,
