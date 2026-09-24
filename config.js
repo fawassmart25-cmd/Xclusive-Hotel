@@ -83,7 +83,7 @@ export const ROLES = [
     name: 'Reception',
     icon: 'door',
     active: true,
-    description: 'Room sales and guest management',
+    description: 'Sell Rooms, Bar, Kitchen, and Games; supervise sales',
     landingTab: 'reception',
     isAdmin: false,
   },

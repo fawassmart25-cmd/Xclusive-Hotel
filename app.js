@@ -329,17 +329,28 @@ function renderApp() {
 
 function buildTabList(role, activeDepts) {
   const tabs = [];
-  if (role.isAdmin) {
-    tabs.push({ id: 'dashboard', name: 'Home', icon: 'grid', type: 'dashboard' });
-    activeDepts.forEach((dept) => tabs.push({ id: dept.id, name: dept.shortName, icon: dept.icon, type: 'department', dept }));
+  tabs.push({ id: 'dashboard', name: 'Home', icon: 'grid', type: 'dashboard' });
+
+  // Admin and Reception can open every selling department.
+  // Department staff can open only their own selling page.
+  if (role.isAdmin || role.id === 'reception') {
+    activeDepts.forEach((dept) => {
+      tabs.push({ id: dept.id, name: dept.shortName, icon: dept.icon, type: 'department', dept });
+    });
   } else {
     const ownDept = role.id === 'game' ? 'games' : role.id;
     const dept = activeDepts.find(d => d.id === ownDept);
     if (dept) tabs.push({ id: dept.id, name: dept.shortName, icon: dept.icon, type: 'department', dept });
   }
+
   // Every authenticated role can see Reports, but the report renderer applies role-level filtering.
   tabs.push({ id: 'reports', name: 'Reports', icon: 'chart', type: 'reports' });
-  if (role.isAdmin || role.id === 'reception') tabs.push({ id: 'stock', name: 'Stock', icon: 'receipt', type: 'stock' });
+
+  // Stock remains restricted to Admin and Reception.
+  if (role.isAdmin || role.id === 'reception') {
+    tabs.push({ id: 'stock', name: 'Stock', icon: 'receipt', type: 'stock' });
+  }
+
   if (role.isAdmin) {
     tabs.push({ id: 'analysis', name: 'Analysis', icon: 'chart', type: 'reports' });
     tabs.push({ id: 'pricemanager', name: 'Prices', icon: 'tag', type: 'pricemanager' });
@@ -357,10 +368,21 @@ function normalizeTabId(id) {
 
 function allowedTab(role, tabId) {
   tabId = normalizeTabId(tabId);
-  if (tabId === 'reports') return true;
+
+  if (tabId === 'dashboard' || tabId === 'reports') return true;
   if (tabId === 'stock') return role.isAdmin || role.id === 'reception';
-  if (tabId === 'staff' || tabId === 'analysis' || tabId === 'pricemanager' || tabId === 'settings' || tabId === 'dashboard') return role.isAdmin;
-  if (['reception','bar','kitchen','games'].includes(tabId)) return role.isAdmin || ((role.id === 'game' && tabId === 'games') || role.id === tabId);
+  if (tabId === 'staff' || tabId === 'analysis' || tabId === 'pricemanager' || tabId === 'settings') return role.isAdmin;
+
+  // Reception is a supervisor/cashier and may sell for every department.
+  if (role.isAdmin || role.id === 'reception') {
+    return ['reception', 'bar', 'kitchen', 'games'].includes(tabId);
+  }
+
+  // Department staff may sell only within their own department.
+  if (tabId === 'games') return role.id === 'game';
+  if (['bar', 'kitchen'].includes(tabId)) return role.id === tabId;
+  if (tabId === 'reception') return false;
+
   return false;
 }
 
@@ -372,7 +394,7 @@ function pathForTab(tabId) {
 function showAccessDeniedAndRedirect(role) {
   const own = role.isAdmin ? 'dashboard' : (role.id === 'game' ? 'games' : role.id);
   const content = $('#content-area');
-  if (content) content.innerHTML = `<div class="empty-screen"><div class="empty-screen__icon">${getIcon('lock',40)}</div><h2 class="empty-screen__title">ACCESS DENIED</h2><p class="empty-screen__message">You do not have permission to open this page.</p></div>`;
+  if (content) content.innerHTML = `<div class="empty-screen"><div class="empty-screen__icon">${getIcon('lock',40)}</div><h2 class="empty-screen__title">ACCESS DENIED</h2><p class="empty-screen__message">ACCESS DENIED - You can only sell for your department</p></div>`;
   showToast('ACCESS DENIED', 'error');
   const target = pathForTab(own);
   history.replaceState({}, '', target);
