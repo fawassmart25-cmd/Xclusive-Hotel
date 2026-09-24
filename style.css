@@ -1,3 +1,7 @@
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 100%; overflow-x: hidden; }
+img, svg, i { max-width: 100%; }
+
 /* ═══════════════════════════════════════════════════════════
    XCLUSIVE HOTEL MANAGER — Design System
    Dark mode · Gold/Amber accents · Native-app feel
@@ -2658,4 +2662,102 @@ select.form-input {
   padding: 3px var(--sm);
   border-radius: var(--r-full);
   white-space: nowrap;
+}
+
+/* ===== Global responsive layout ===== */
+.card-container {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+  width: 100%;
+}
+.card {
+  width: 100%;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.table-wrapper {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.table-wrapper table,
+table {
+  width: 100%;
+  min-width: 600px;
+}
+
+/* Prevent layout children from forcing their parent wider */
+.card-container > *,
+.dashboard-grid > *,
+.stats-grid > *,
+.stat-grid > *,
+.cards-grid > *,
+.card-grid > *,
+.stat-card,
+.card,
+main,
+.main-content,
+.content,
+.page-content,
+.dashboard-content,
+section {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.icon,
+.stat-icon {
+  flex-shrink: 0;
+}
+
+.stat-card {
+  display: flex;
+  flex-wrap: wrap;
+  word-break: break-word;
+  overflow: hidden;
+}
+
+@media (max-width: 768px) {
+  .sidebar {
+    width: 100%;
+    position: relative;
+    height: auto;
+  }
+  .main-content {
+    margin-left: 0 !important;
+    padding: 12px !important;
+    width: 100% !important;
+  }
+  header {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  .stat-card h2 {
+    font-size: 18px;
+    word-break: break-word;
+  }
+  .card-container {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+  .table-wrapper {
+    max-width: 100%;
+  }
+  button,
+  input,
+  select,
+  textarea {
+    max-width: 100%;
+  }
+}
+
+@media (max-width: 480px) {
+  .main-content,
+  .content,
+  .page-content,
+  .dashboard-content {
+    padding: 10px !important;
+  }
 }
