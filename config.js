@@ -106,7 +106,7 @@ export const ROLES = [
     isAdmin: false,
   },
   {
-    id: 'games',
+    id: 'game',
     name: 'Game Lounge',
     icon: 'gamepad',
     active: true,

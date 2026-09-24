@@ -4,10 +4,8 @@
 // ═══════════════════════════════════════════════════════════
 
 import {
-  getItemPrices,
-} from './prices.js';
-import {
-  saveSale,
+  getItemsByDepartment,
+  saveItemSale,
   saveGameSession,
   getActiveGameSessions,
   generateSaleId,
@@ -50,7 +48,7 @@ export function setGamesCallbacks({ showToast, isOnline, refreshDashboard }) {
 
 export async function renderGames() {
   const deptId = 'games';
-  const items = getItemPrices(deptId);
+  const items = (await getItemsByDepartment(deptId)).filter(i => Number(i.quantity) > 0);
   const activeSessions = await getActiveGameSessions();
 
   const container = el('div', 'dashboard');
@@ -377,7 +375,14 @@ async function endSession(session) {
     syncStatus: _isOnline() ? 'synced' : 'pending',
   };
 
-  await saveSale(sale);
+  await saveItemSale({
+    ...sale,
+    itemId: session.gameTypeId,
+    itemName: session.gameType,
+    qty: 1,
+    unitPrice: finalTotal,
+    total: finalTotal,
+  });
 
   // Mark session as ended
   session.status = 'ended';

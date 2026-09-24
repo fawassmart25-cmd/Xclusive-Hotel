@@ -4,7 +4,7 @@
 // ═══════════════════════════════════════════════════════════
 
 const DB_NAME = 'xclusive_hotel';
-const DB_VERSION = 3;
+const DB_VERSION = 4;
 
 let dbPromise = null;
 
@@ -52,6 +52,13 @@ function openDB() {
         store.createIndex('by_username', 'username', { unique: true });
         store.createIndex('by_role', 'role', { unique: false });
         store.createIndex('by_active', 'isActive', { unique: false });
+      }
+
+      // Canonical stock/product table. Quantity is the current on-hand balance.
+      if (!db.objectStoreNames.contains('items')) {
+        const store = db.createObjectStore('items', { keyPath: 'id' });
+        store.createIndex('by_department', 'department', { unique: false });
+        store.createIndex('by_name', 'name', { unique: false });
       }
     };
 
@@ -244,3 +251,70 @@ export async function getAllStaff() { const store=await tx('staff'); return reqT
 export async function getStaffMember(id) { const store=await tx('staff'); return reqToPromise(store.get(id)); }
 export async function getStaffByUsername(username) { const store=await tx('staff'); return reqToPromise(store.index('by_username').get(username)); }
 export async function deleteStaffMember(id) { const store=await tx('staff','readwrite'); return reqToPromise(store.delete(id)); }
+
+// ── Items / Stock Management ─────────────────────────────────
+export async function getAllItems() {
+  const store = await tx('items');
+  return reqToPromise(store.getAll());
+}
+
+export async function getItemsByDepartment(deptId) {
+  const store = await tx('items');
+  return reqToPromise(store.index('by_department').getAll(deptId));
+}
+
+export async function getItem(id) {
+  const store = await tx('items');
+  return reqToPromise(store.get(id));
+}
+
+export async function saveItem(item) {
+  const store = await tx('items', 'readwrite');
+  return reqToPromise(store.put({
+    id: item.id,
+    name: String(item.name || '').trim(),
+    department: item.department,
+    quantity: Math.max(0, Number(item.quantity) || 0),
+    price: Math.max(0, Number(item.price) || 0),
+    updatedAt: item.updatedAt || new Date().toISOString(),
+  }));
+}
+
+export async function deleteItem(id) {
+  const store = await tx('items', 'readwrite');
+  return reqToPromise(store.delete(id));
+}
+
+// Atomically save a POS item sale and reduce its current stock quantity.
+export async function saveItemSale(sale) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(['sales', 'items'], 'readwrite');
+    const salesStore = transaction.objectStore('sales');
+    const itemsStore = transaction.objectStore('items');
+    const itemReq = itemsStore.get(sale.itemId);
+
+    itemReq.onerror = () => reject(itemReq.error);
+    itemReq.onsuccess = () => {
+      const item = itemReq.result;
+      const qty = Number(sale.qty) || 0;
+      if (!item) {
+        reject(new Error('Item no longer exists.'));
+        transaction.abort();
+        return;
+      }
+      if (qty <= 0 || Number(item.quantity) < qty) {
+        reject(new Error(`Not enough stock for ${item.name}. Available: ${item.quantity}`));
+        transaction.abort();
+        return;
+      }
+      item.quantity = Number(item.quantity) - qty;
+      item.updatedAt = new Date().toISOString();
+      salesStore.put(sale);
+      itemsStore.put(item);
+    };
+    transaction.oncomplete = () => resolve(sale);
+    transaction.onerror = () => reject(transaction.error);
+    transaction.onabort = () => reject(transaction.error || new Error('Sale was not saved.'));
+  });
+}

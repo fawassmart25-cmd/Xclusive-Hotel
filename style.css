@@ -958,8 +958,8 @@ input, textarea, select {
   transform: scale(0.97);
 }
 
-/* ── Coming soon placeholder ───────────────────────────────── */
-.coming-soon {
+/* ── Settings action status ─────────────────────────────────── */
+.status-open {
   text-align: center;
   font-size: 11px;
   color: var(--ink-200);

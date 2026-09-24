@@ -41,6 +41,7 @@ import { getStaffByRole, getSeedStaff } from './staff.js';
 import { getAllStaff, saveStaffMember, getStaffByUsername } from './db.js';
 import { renderReports } from './reports.js';
 import { renderStaffPage } from './staff-page.js';
+import { renderStock, seedItemStore } from './stock.js';
 
 // ── State ────────────────────────────────────────────────────
 const state = {
@@ -301,11 +302,17 @@ function renderApp() {
 
   const activeDepts = getActiveDepartments();
   const tabs = buildTabList(role, activeDepts);
-
+  const requested = routeFromPath();
+  if (requested && allowedTab(role, requested)) state.currentTab = requested;
+  else if (requested && !allowedTab(role, requested)) {
+    state.currentTab = role.isAdmin ? 'dashboard' : (role.id === 'game' ? 'games' : role.id);
+    setTimeout(() => showAccessDeniedAndRedirect(role), 0);
+  }
   if (!state.currentTab || !tabs.find((t) => t.id === state.currentTab)) {
     state.currentTab = role.landingTab && tabs.find((t) => t.id === role.landingTab)
       ? role.landingTab : tabs[0].id;
   }
+  history.replaceState({}, '', pathForTab(state.currentTab));
 
   const shell = el('div', 'app-shell fade-in');
   shell.appendChild(buildTopBar(role));
@@ -322,18 +329,63 @@ function renderApp() {
 
 function buildTabList(role, activeDepts) {
   const tabs = [];
-  if (role.isAdmin) tabs.push({ id: 'dashboard', name: 'Home', icon: 'grid', type: 'dashboard' });
-  activeDepts.forEach((dept) => tabs.push({ id: dept.id, name: dept.shortName, icon: dept.icon, type: 'department', dept }));
-  if (role.isAdmin || role.id === 'reception') tabs.push({ id: 'reports', name: 'Reports', icon: 'chart', type: 'reports' });
+  if (role.isAdmin) {
+    tabs.push({ id: 'dashboard', name: 'Home', icon: 'grid', type: 'dashboard' });
+    activeDepts.forEach((dept) => tabs.push({ id: dept.id, name: dept.shortName, icon: dept.icon, type: 'department', dept }));
+  } else {
+    const ownDept = role.id === 'game' ? 'games' : role.id;
+    const dept = activeDepts.find(d => d.id === ownDept);
+    if (dept) tabs.push({ id: dept.id, name: dept.shortName, icon: dept.icon, type: 'department', dept });
+  }
+  // Every authenticated role can see Reports, but the report renderer applies role-level filtering.
+  tabs.push({ id: 'reports', name: 'Reports', icon: 'chart', type: 'reports' });
+  if (role.isAdmin || role.id === 'reception') tabs.push({ id: 'stock', name: 'Stock', icon: 'receipt', type: 'stock' });
   if (role.isAdmin) {
     tabs.push({ id: 'analysis', name: 'Analysis', icon: 'chart', type: 'reports' });
     tabs.push({ id: 'pricemanager', name: 'Prices', icon: 'tag', type: 'pricemanager' });
     tabs.push({ id: 'staff', name: 'Staff', icon: 'users', type: 'staff' });
     tabs.push({ id: 'settings', name: 'Admin', icon: 'settings', type: 'settings' });
   }
-  if (tabs.length === 0) tabs.push({ id: 'dashboard', name: 'Home', icon: 'grid', type: 'dashboard' });
   return tabs;
 }
+
+function normalizeTabId(id) {
+  if (id === 'game') return 'games';
+  if (id === 'room') return 'reception';
+  return id;
+}
+
+function allowedTab(role, tabId) {
+  tabId = normalizeTabId(tabId);
+  if (tabId === 'reports') return true;
+  if (tabId === 'stock') return role.isAdmin || role.id === 'reception';
+  if (tabId === 'staff' || tabId === 'analysis' || tabId === 'pricemanager' || tabId === 'settings' || tabId === 'dashboard') return role.isAdmin;
+  if (['reception','bar','kitchen','games'].includes(tabId)) return role.isAdmin || ((role.id === 'game' && tabId === 'games') || role.id === tabId);
+  return false;
+}
+
+function pathForTab(tabId) {
+  const map = { dashboard:'/', reception:'/reception', bar:'/bar', kitchen:'/kitchen', games:'/game', reports:'/reports', stock:'/stock', analysis:'/analysis', pricemanager:'/prices', staff:'/staff', settings:'/admin' };
+  return map[tabId] || '/';
+}
+
+function showAccessDeniedAndRedirect(role) {
+  const own = role.isAdmin ? 'dashboard' : (role.id === 'game' ? 'games' : role.id);
+  const content = $('#content-area');
+  if (content) content.innerHTML = `<div class="empty-screen"><div class="empty-screen__icon">${getIcon('lock',40)}</div><h2 class="empty-screen__title">ACCESS DENIED</h2><p class="empty-screen__message">You do not have permission to open this page.</p></div>`;
+  showToast('ACCESS DENIED', 'error');
+  const target = pathForTab(own);
+  history.replaceState({}, '', target);
+  state.currentTab = own;
+  setTimeout(() => renderApp(), 450);
+}
+
+function routeFromPath() {
+  const p = location.pathname.replace(/\/+$/,'') || '/';
+  const map = {'/':'dashboard','/reception':'reception','/bar':'bar','/kitchen':'kitchen','/game':'games','/games':'games','/reports':'reports','/stock':'stock','/analysis':'analysis','/prices':'pricemanager','/staff':'staff','/admin':'settings'};
+  return map[p] || null;
+}
+
 
 function buildTopBar(role) {
   const bar = el('div', 'top-bar');
@@ -372,31 +424,36 @@ function buildBottomNav(tabs) {
 }
 
 function switchTab(tabId) {
+  tabId = normalizeTabId(tabId);
+  if (!allowedTab(state.currentRole, tabId)) { showAccessDeniedAndRedirect(state.currentRole); return; }
   if (tabId === state.currentTab) return;
   state.currentTab = tabId;
-  document.querySelectorAll('.nav-item').forEach((item) => {
-    item.classList.toggle('active', item.dataset.tabId === tabId);
-  });
+  history.pushState({}, '', pathForTab(tabId));
+  document.querySelectorAll('.nav-item').forEach((item) => item.classList.toggle('active', item.dataset.tabId === tabId));
   const topBar = $('.top-bar');
   if (topBar) topBar.replaceWith(buildTopBar(state.currentRole));
   renderContent(tabId, state.currentRole);
 }
+
 
 // ═══════════════════════════════════════════════════════════════
 //  CONTENT ROUTING
 // ═══════════════════════════════════════════════════════════════
 
 async function renderContent(tabId, role) {
+  tabId = normalizeTabId(tabId);
   const content = $('#content-area');
   if (!content) return;
+  if (!allowedTab(role, tabId)) { showAccessDeniedAndRedirect(role); return; }
   clearNode(content);
 
   if (tabId === 'reception') { content.appendChild(await renderReception()); return; }
   if (tabId === 'bar' || tabId === 'kitchen') { content.appendChild(await renderPOS(tabId)); return; }
   if (tabId === 'games') { content.appendChild(await renderGames()); return; }
-  if (tabId === 'reports') { content.appendChild(await renderReports({title:'Reports', canClear:role.isAdmin})); return; }
-  if (tabId === 'analysis') { content.appendChild(await renderReports({title:'Analytics'})); return; }
-  if (tabId === 'staff' && role.isAdmin) { content.appendChild(await renderStaffPage()); return; }
+  if (tabId === 'reports') { content.appendChild(await renderReports({role:role.id, username:state.currentUsername, title:'Reports', canClear:role.isAdmin})); return; }
+  if (tabId === 'analysis') { content.appendChild(await renderReports({role:'admin', username:state.currentUsername, title:'Analytics', canClear:false})); return; }
+  if (tabId === 'staff') { content.appendChild(await renderStaffPage()); return; }
+  if (tabId === 'stock') { content.appendChild(await renderStock({canManage:role.isAdmin || role.id==='reception'})); return; }
 
   const wrapper = el('div', 'fade-in-up');
 
@@ -802,7 +859,7 @@ function renderSettings(role) {
       <div style="font-size:15px; font-weight:600; color:var(--ink-100);">${action.label}</div>
       <div class="stat-card__label">${action.desc}</div>
       <div style="margin-top:auto; padding-top:var(--sm);">
-        <span class="coming-soon">${action.active ? 'Open' : 'Coming soon'}</span>
+        <span class="status-open">Open</span>
       </div>
     `;
     if (action.active) {
@@ -1092,8 +1149,8 @@ function renderGenericEmpty() {
   const screen = el('div', 'empty-screen');
   screen.innerHTML = `
     <div class="empty-screen__icon">${getIcon('grid', 40)}</div>
-    <h2 class="empty-screen__title">Nothing here yet</h2>
-    <p class="empty-screen__message">This screen is not yet configured.</p>
+    <h2 class="empty-screen__title">Page unavailable</h2>
+    <p class="empty-screen__message">This page is not available for this account.</p>
   `;
   return screen;
 }
@@ -1108,6 +1165,7 @@ function logout() {
   localStorage.removeItem(STORAGE_KEYS.staffName);
   localStorage.removeItem(STORAGE_KEYS.username);
   localStorage.removeItem('xclusive_current_user');
+  history.replaceState({}, '', '/');
   showToast('Signed out', '');
   renderLogin();
 }
@@ -1154,7 +1212,13 @@ async function updateOnlineStatus() {
 
 async function seedStaffStore() {
   const existing = await getAllStaff();
-  if (existing.length) return existing;
+  if (existing.length) {
+    // Migrate the old internal role id "games" to the final role id "game".
+    for (const member of existing) {
+      if (member.role === 'games') { member.role = 'game'; await saveStaffMember(member); }
+    }
+    return await getAllStaff();
+  }
   const seeds = getSeedStaff();
   for (const member of seeds) await saveStaffMember(member);
   return seeds;
@@ -1162,6 +1226,7 @@ async function seedStaffStore() {
 
 async function init() {
   await seedStaffStore();
+  await seedItemStore(getAllItemPrices);
   const savedRoleId = localStorage.getItem(STORAGE_KEYS.role);
   const savedUsername = localStorage.getItem(STORAGE_KEYS.username);
   const savedStaffName = localStorage.getItem(STORAGE_KEYS.staffName);
@@ -1176,6 +1241,7 @@ async function init() {
     const all = await getAllStaff(); const member = all.find(s=>s.name===savedStaffName && s.role===savedRoleId && s.isActive!==false);
     if (member) { state.currentRole=getRoleById(member.role); state.currentStaffName=member.name; state.currentUsername=member.username; localStorage.setItem(STORAGE_KEYS.username,member.username); }
   }
+  window.addEventListener('popstate', () => { if (state.currentRole) renderApp(); });
   window.addEventListener('online', updateOnlineStatus);
   window.addEventListener('offline', updateOnlineStatus);
   if (state.currentRole && state.currentStaffName) renderApp(); else renderLogin();

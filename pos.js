@@ -1,588 +1,77 @@
-// ═══════════════════════════════════════════════════════════
-//  POS Module — shared by Bar & Kitchen
-//  Sub-tabs: Stock IN | Sales
-//  Sales: search-as-you-type, qty, live remaining count
-//  All saves go to IndexedDB. Shows "Pending Sync" if offline.
-// ═══════════════════════════════════════════════════════════
-
-import {
-  getItemPrices,
-} from './prices.js';
-import {
-  saveSale,
-  saveStockIn,
-  getFullInventory,
-  getStockInByDepartment,
-  getSalesByDepartment,
-  generateSaleId,
-  generateId,
-  todayStr,
-} from './db.js';
-import {
-  PAYMENT_METHODS,
-  formatCurrency,
-  getDepartmentById,
-} from './config.js';
+// Bar & Kitchen POS. Staff can only sell items created in Stock Management.
+import { getItemsByDepartment, saveItemSale, generateSaleId, todayStr } from './db.js';
+import { PAYMENT_METHODS, formatCurrency, getDepartmentById } from './config.js';
 import { getIcon } from './icons.js';
 
-// ── DOM helpers ──────────────────────────────────────────────
-function el(tag, className = '', innerHTML = '') {
-  const e = document.createElement(tag);
-  if (className) e.className = className;
-  if (innerHTML) e.innerHTML = innerHTML;
-  return e;
+function el(tag, cls='', html=''){const e=document.createElement(tag);if(cls)e.className=cls;if(html)e.innerHTML=html;return e;}
+function $(s,p=document){return p.querySelector(s);}
+let _showToast=()=>{}, _isOnline=()=>true, _refreshDashboard=()=>{};
+export function setPOSCallbacks(c){_showToast=c.showToast;_isOnline=c.isOnline;_refreshDashboard=c.refreshDashboard;}
+
+export async function renderPOS(deptId){
+  const dept=getDepartmentById(deptId);
+  if(!dept)return el('div','','Department not found');
+  const root=el('div','dashboard');
+  const items=await getItemsByDepartment(deptId);
+  const cart=[];
+  const wrap=el('div','pos-sales');
+  let timeStarted=null;
+  wrap.addEventListener('focusin',e=>{if(e.target.matches('input,select,textarea')&&!timeStarted)timeStarted=new Date().toISOString();});
+  wrap.innerHTML=`<div class="pos-search-bar"><div class="pos-search-input-wrap">${getIcon('search',20)}<input class="pos-search-input" id="pos-search" placeholder="Search items..." autocomplete="off"></div></div>
+    <div class="pos-results-wrap"><div class="pos-results" id="pos-results"></div></div>
+    <div class="pos-cart"><div class="pos-cart__header"><span class="pos-cart__title">${getIcon('receipt',18)}<span>Current Order</span></span><span id="pos-cart-count">0 items</span></div>
+    <div class="pos-cart__items" id="pos-cart-items"><div class="pos-cart__empty">Tap an item above to add it</div></div>
+    <div class="pos-cart__total"><span>Total</span><span id="pos-cart-total">${formatCurrency(0)}</span></div>
+    <button class="btn btn--primary btn--full" id="pos-checkout-btn" disabled>${getIcon('check',20)}<span>Checkout</span></button></div>`;
+  root.appendChild(wrap);
+
+  const results=$('#pos-results',wrap), search=$('#pos-search',wrap);
+  const renderResults=()=>{
+    const q=search.value.trim().toLowerCase();
+    results.innerHTML='';
+    const shown=items.filter(i=>i.name.toLowerCase().includes(q));
+    if(!shown.length){results.innerHTML='<div class="pos-results__empty"><p>No stock items found. Admin/Reception must add products in Stock.</p></div>';return;}
+    shown.forEach(item=>{
+      const qty=Number(item.quantity)||0, out=qty<=0;
+      const row=el('div',`pos-result ${out?'pos-result--out':''}`);
+      row.innerHTML=`<div class="pos-result__info"><div class="pos-result__name">${item.name}</div><div class="pos-result__meta"><span class="pos-result__price">${formatCurrency(item.price)}</span><span>${out?'Out of stock':`${qty} available`}</span></div></div><button class="pos-result__add" ${out?'disabled':''}>${getIcon('plus',20)}</button>`;
+      if(!out)row.addEventListener('click',()=>{const c=cart.find(x=>x.id===item.id);if(c){if(c.qty<qty)c.qty++;}else cart.push({id:item.id,name:item.name,price:Number(item.price)||0,available:qty,qty:1});updateCart();});
+      results.appendChild(row);
+    });
+  };
+  function updateCart(){
+    const body=$('#pos-cart-items',wrap), totalEl=$('#pos-cart-total',wrap), countEl=$('#pos-cart-count',wrap), btn=$('#pos-checkout-btn',wrap);
+    body.innerHTML=''; let total=0,count=0;
+    cart.forEach((c,i)=>{total+=c.price*c.qty;count+=c.qty;const row=el('div','pos-cart-item');row.innerHTML=`<div class="pos-cart-item__info"><span>${c.name}</span><span>${formatCurrency(c.price)} × ${c.qty}</span></div><div class="pos-cart-item__controls"><button class="pos-qty-btn" data-a="dec" data-i="${i}">−</button><span>${c.qty}</span><button class="pos-qty-btn" data-a="inc" data-i="${i}">+</button><button class="pos-qty-btn pos-qty-btn--remove" data-a="remove" data-i="${i}">${getIcon('x',16)}</button></div><span>${formatCurrency(c.price*c.qty)}</span>`;body.appendChild(row);});
+    if(!cart.length)body.innerHTML='<div class="pos-cart__empty">Tap an item above to add it</div>';
+    totalEl.textContent=formatCurrency(total);countEl.textContent=`${count} item${count!==1?'s':''}`;btn.disabled=!cart.length;
+    body.querySelectorAll('.pos-qty-btn').forEach(b=>b.onclick=e=>{e.stopPropagation();const c=cart[Number(b.dataset.i)];if(!c)return;const a=b.dataset.a;if(a==='inc'&&c.qty<c.available)c.qty++;if(a==='dec')c.qty--;if(a==='remove'||c.qty<=0)cart.splice(Number(b.dataset.i),1);updateCart();});
+  }
+  search.addEventListener('input',renderResults); renderResults();
+  $('#pos-checkout-btn',wrap).addEventListener('click',()=>cart.length&&openCheckout(deptId,dept,cart,timeStarted,async()=>{cart.length=0;root.replaceWith(await renderPOS(deptId));}));
+  return root;
 }
 
-function $(sel, parent = document) {
-  return parent.querySelector(sel);
-}
-
-// ── Callbacks ────────────────────────────────────────────────
-let _showToast = () => {};
-let _isOnline = () => true;
-let _refreshDashboard = () => {};
-
-export function setPOSCallbacks({ showToast, isOnline, refreshDashboard }) {
-  _showToast = showToast;
-  _isOnline = isOnline;
-  _refreshDashboard = refreshDashboard;
-}
-
-// ═══════════════════════════════════════════════════════════════
-//  MAIN RENDER — called by app.js with deptId
-// ═══════════════════════════════════════════════════════════════
-
-export async function renderPOS(deptId) {
-  const dept = getDepartmentById(deptId);
-  if (!dept) return el('div', '', 'Department not found');
-
-  const container = el('div', 'dashboard');
-
-  // Sub-tab switcher
-  const subTabs = el('div', 'sub-tabs');
-  subTabs.innerHTML = `
-    <button class="sub-tab active" data-subtab="sales">${getIcon('receipt', 16)}<span>Sales</span></button>
-    <button class="sub-tab" data-subtab="stock">${getIcon('plus', 16)}<span>Stock IN</span></button>
-  `;
-  container.appendChild(subTabs);
-
-  // Content area for sub-tabs
-  const subContent = el('div', 'sub-content');
-  subContent.id = 'pos-sub-content';
-  container.appendChild(subContent);
-
-  // Render sales tab by default
-  await renderSalesTab(subContent, deptId);
-
-  // Sub-tab switching
-  subTabs.querySelectorAll('.sub-tab').forEach((tab) => {
-    tab.addEventListener('click', async () => {
-      subTabs.querySelectorAll('.sub-tab').forEach((t) => t.classList.remove('active'));
-      tab.classList.add('active');
-      const subtab = tab.dataset.subtab;
-      while (subContent.firstChild) subContent.removeChild(subContent.firstChild);
-      if (subtab === 'sales') {
-        await renderSalesTab(subContent, deptId);
-      } else {
-        await renderStockTab(subContent, deptId);
+function openCheckout(deptId,dept,cart,timeStarted,onSuccess){
+  const overlay=el('div','modal-overlay');overlay.id='modal-overlay';const sheet=el('div','bottom-sheet');
+  const total=cart.reduce((a,c)=>a+c.price*c.qty,0);
+  sheet.innerHTML=`<div class="bottom-sheet__handle"></div><div class="bottom-sheet__header"><h2>Checkout — ${dept.name}</h2><button class="icon-btn" id="close-sheet">${getIcon('x',20)}</button></div><div class="bottom-sheet__body">
+    <div class="checkout-info">${cart.map(c=>`<div class="checkout-info__row"><span>${c.name} × ${c.qty}</span><span>${formatCurrency(c.price*c.qty)}</span></div>`).join('')}<div class="checkout-info__row"><strong>Total</strong><strong>${formatCurrency(total)}</strong></div></div>
+    <div class="form-row"><label class="form-label">Customer (optional)</label><input class="form-input" id="co-customer" placeholder="Customer name"></div>
+    <div class="form-row"><label class="form-label">Payment Method</label><div class="segmented" id="co-payment">${PAYMENT_METHODS.map((m,i)=>`<button class="seg-btn ${i===0?'active':''}" data-payment="${m.id}">${m.name}</button>`).join('')}</div><input class="form-input hidden" id="co-refno" placeholder="Reference No." style="margin-top:8px"></div>
+    ${!_isOnline()?`<div class="pending-sync-banner">${getIcon('wifiOff',16)}<span>Offline — sale saved on this device</span></div>`:''}
+    <button class="btn btn--primary btn--full" id="co-confirm">${getIcon('check',20)}<span>Complete Sale</span></button></div>`;
+  overlay.appendChild(sheet);document.body.appendChild(overlay);let payment='cash';
+  sheet.querySelectorAll('[data-payment]').forEach(b=>b.onclick=()=>{sheet.querySelectorAll('[data-payment]').forEach(x=>x.classList.remove('active'));b.classList.add('active');payment=b.dataset.payment;$('#co-refno',sheet).classList.toggle('hidden',payment==='cash');});
+  const close=()=>overlay.remove();$('#close-sheet',sheet).onclick=close;overlay.onclick=e=>{if(e.target===overlay)close();};
+  $('#co-confirm',sheet).onclick=async()=>{
+    const now=new Date(), customer=$('#co-customer',sheet).value.trim(), ref=$('#co-refno',sheet).value.trim();
+    const username=localStorage.getItem('xclusive_staff_username')||'';
+    try{
+      for(const c of cart){
+        await saveItemSale({id:generateSaleId(deptId)+'_'+c.id,department:deptId,type:'item_sale',itemId:c.id,itemName:c.name,qty:c.qty,unitPrice:c.price,total:c.price*c.qty,paymentMethod:payment,refNo:payment==='cash'?'':ref,customerName:customer,soldBy:username,username,timeStarted:timeStarted||now.toISOString(),timeSaved:now.toISOString(),timestamp:now.toISOString(),dateStr:todayStr(),locked:true,voided:false,syncStatus:_isOnline()?'synced':'pending'});
       }
-    });
-  });
-
-  return container;
-}
-
-// ═══════════════════════════════════════════════════════════════
-//  SALES TAB — search, add to cart, checkout
-// ═══════════════════════════════════════════════════════════════
-
-async function renderSalesTab(parent, deptId) {
-  const items = getItemPrices(deptId);
-  const inventory = await getFullInventory(deptId);
-  const cart = [];
-
-  const wrap = el('div', 'pos-sales');
-  let saleStartedAt = null;
-  wrap.addEventListener('focusin', () => { if (!saleStartedAt) saleStartedAt = new Date().toISOString(); });
-
-  // Search bar
-  const searchBar = el('div', 'pos-search-bar');
-  searchBar.innerHTML = `
-    <div class="pos-search-input-wrap">
-      ${getIcon('search', 20)}
-      <input type="text" class="pos-search-input" id="pos-search" placeholder="Search items..." autocomplete="off" />
-    </div>
-  `;
-  wrap.appendChild(searchBar);
-
-  // Search results
-  const resultsWrap = el('div', 'pos-results-wrap');
-  const results = el('div', 'pos-results');
-  results.id = 'pos-results';
-  resultsWrap.appendChild(results);
-  wrap.appendChild(resultsWrap);
-
-  // Cart
-  const cartWrap = el('div', 'pos-cart');
-  cartWrap.id = 'pos-cart';
-  cartWrap.innerHTML = `
-    <div class="pos-cart__header">
-      <span class="pos-cart__title">${getIcon('receipt', 18)}<span>Current Order</span></span>
-      <span class="pos-cart__count" id="pos-cart-count">0 items</span>
-    </div>
-    <div class="pos-cart__items" id="pos-cart-items">
-      <div class="pos-cart__empty">Tap items above to add to order</div>
-    </div>
-    <div class="pos-cart__total">
-      <span>Total</span>
-      <span class="pos-cart__total-value" id="pos-cart-total">${formatCurrency(0)}</span>
-    </div>
-    <button class="btn btn--primary btn--full pos-cart__checkout" id="pos-checkout-btn" disabled>
-      ${getIcon('check', 20)}
-      <span>Checkout</span>
-    </button>
-  `;
-  wrap.appendChild(cartWrap);
-
-  parent.appendChild(wrap);
-
-  // Render initial results (all items)
-  renderSearchResults(results, items, inventory, deptId, cart, () => updateCartUI(cartWrap, cart));
-
-  // Search handler
-  const searchInput = $('#pos-search', wrap);
-  searchInput.addEventListener('input', () => {
-    const query = searchInput.value.trim().toLowerCase();
-    const filtered = items.filter((item) =>
-      item.name.toLowerCase().includes(query)
-    );
-    renderSearchResults(results, filtered, inventory, deptId, cart, () => updateCartUI(cartWrap, cart));
-  });
-
-  // Checkout handler
-  $('#pos-checkout-btn', wrap).addEventListener('click', () => {
-    if (cart.length === 0) return;
-    openCheckoutSheet(deptId, cart, wrap, () => {
-      // After successful sale, refresh
-      cart.length = 0;
-      updateCartUI(cartWrap, cart);
-      // Re-render the sales tab to refresh inventory
-      while (parent.firstChild) parent.removeChild(parent.firstChild);
-      renderSalesTab(parent, deptId);
-    });
-  });
-}
-
-function renderSearchResults(container, items, inventory, deptId, cart, onCartChange) {
-  while (container.firstChild) container.removeChild(container.firstChild);
-
-  if (items.length === 0) {
-    container.innerHTML = `
-      <div class="pos-results__empty">
-        ${getIcon('search', 32)}
-        <p>No items found</p>
-      </div>
-    `;
-    return;
-  }
-
-  items.forEach((item) => {
-    const inv = inventory[item.id] || { remaining: 0 };
-    const remaining = inv.remaining;
-    const lowStock = remaining <= 5 && remaining > 0;
-    const outOfStock = remaining <= 0;
-
-    const result = el('div', `pos-result ${outOfStock ? 'pos-result--out' : ''}`);
-    result.innerHTML = `
-      <div class="pos-result__info">
-        <div class="pos-result__name">${item.name}</div>
-        <div class="pos-result__meta">
-          <span class="pos-result__price">${formatCurrency(item.price)}</span>
-          <span class="pos-result__remaining ${outOfStock ? 'pos-result__remaining--out' : lowStock ? 'pos-result__remaining--low' : ''}">
-            ${outOfStock ? 'Out of stock' : `${remaining} remaining`}
-          </span>
-        </div>
-      </div>
-      <button class="pos-result__add" ${outOfStock ? 'disabled' : ''}>
-        ${getIcon('plus', 20)}
-      </button>
-    `;
-
-    if (!outOfStock) {
-      result.addEventListener('click', () => {
-        addToCart(cart, item);
-        onCartChange();
-      });
-    }
-
-    container.appendChild(result);
-  });
-}
-
-function addToCart(cart, item) {
-  const existing = cart.find((c) => c.id === item.id);
-  if (existing) {
-    existing.qty++;
-  } else {
-    cart.push({ id: item.id, name: item.name, price: item.price, qty: 1 });
-  }
-}
-
-function updateCartUI(cartWrap, cart) {
-  const itemsEl = $('#pos-cart-items', cartWrap);
-  const totalEl = $('#pos-cart-total', cartWrap);
-  const countEl = $('#pos-cart-count', cartWrap);
-  const checkoutBtn = $('#pos-checkout-btn', cartWrap);
-
-  const totalQty = cart.reduce((sum, c) => sum + c.qty, 0);
-  const total = cart.reduce((sum, c) => sum + c.price * c.qty, 0);
-
-  countEl.textContent = `${totalQty} item${totalQty !== 1 ? 's' : ''}`;
-  totalEl.textContent = formatCurrency(total);
-  checkoutBtn.disabled = cart.length === 0;
-
-  while (itemsEl.firstChild) itemsEl.removeChild(itemsEl.firstChild);
-
-  if (cart.length === 0) {
-    itemsEl.innerHTML = '<div class="pos-cart__empty">Tap items above to add to order</div>';
-    return;
-  }
-
-  cart.forEach((c, idx) => {
-    const item = el('div', 'pos-cart-item');
-    item.innerHTML = `
-      <div class="pos-cart-item__info">
-        <span class="pos-cart-item__name">${c.name}</span>
-        <span class="pos-cart-item__price">${formatCurrency(c.price)} × ${c.qty}</span>
-      </div>
-      <div class="pos-cart-item__controls">
-        <button class="pos-qty-btn" data-action="dec" data-idx="${idx}">−</button>
-        <span class="pos-cart-item__qty">${c.qty}</span>
-        <button class="pos-qty-btn" data-action="inc" data-idx="${idx}">+</button>
-        <button class="pos-qty-btn pos-qty-btn--remove" data-action="remove" data-idx="${idx}">${getIcon('x', 16)}</button>
-      </div>
-      <span class="pos-cart-item__total">${formatCurrency(c.price * c.qty)}</span>
-    `;
-    itemsEl.appendChild(item);
-  });
-
-  // Wire qty buttons
-  itemsEl.querySelectorAll('.pos-qty-btn').forEach((btn) => {
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const action = btn.dataset.action;
-      const idx = Number(btn.dataset.idx);
-      if (action === 'inc') {
-        cart[idx].qty++;
-      } else if (action === 'dec') {
-        cart[idx].qty--;
-        if (cart[idx].qty <= 0) cart.splice(idx, 1);
-      } else if (action === 'remove') {
-        cart.splice(idx, 1);
-      }
-      updateCartUI(cartWrap, cart);
-    });
-  });
-}
-
-// ═══════════════════════════════════════════════════════════════
-//  CHECKOUT SHEET
-// ═══════════════════════════════════════════════════════════════
-
-function openCheckoutSheet(deptId, cart, parentEl, onSuccess) {
-  const existing = $('#modal-overlay');
-  if (existing) existing.remove();
-
-  const dept = getDepartmentById(deptId);
-  const total = cart.reduce((sum, c) => sum + c.price * c.qty, 0);
-  const online = _isOnline();
-
-  const overlay = el('div', 'modal-overlay');
-  overlay.id = 'modal-overlay';
-
-  const sheet = el('div', 'bottom-sheet');
-  sheet.innerHTML = `
-    <div class="bottom-sheet__handle"></div>
-    <div class="bottom-sheet__header">
-      <h2>Checkout — ${dept.name}</h2>
-      <button class="icon-btn" id="close-sheet">${getIcon('x', 20)}</button>
-    </div>
-    <div class="bottom-sheet__body">
-      <div class="checkout-info">
-        ${cart.map((c) => `
-          <div class="checkout-info__row">
-            <span class="checkout-info__label">${c.name} × ${c.qty}</span>
-            <span class="checkout-info__value">${formatCurrency(c.price * c.qty)}</span>
-          </div>
-        `).join('')}
-        <div class="checkout-info__row" style="border-top:1px solid var(--ink-600); padding-top:var(--sm); margin-top:var(--xs);">
-          <span class="checkout-info__label" style="font-weight:600;">Total</span>
-          <span class="checkout-info__value" style="color:var(--gold-300); font-size:18px;">${formatCurrency(total)}</span>
-        </div>
-      </div>
-
-      <div class="form-row">
-        <label class="form-label">Receipt No</label>
-        <input type="text" class="form-input" id="co-receipt" placeholder="Auto-generated if left blank" />
-      </div>
-
-      <div class="form-row">
-        <label class="form-label">Payment Method</label>
-        <div class="segmented" id="co-payment">
-          ${PAYMENT_METHODS.map((m, i) =>
-            `<button class="seg-btn ${i === 0 ? 'active' : ''}" data-payment="${m.id}">${m.name}</button>`
-          ).join('')}
-        </div>
-        <input type="text" class="form-input hidden" id="co-refno" placeholder="Reference No." style="margin-top:8px;" />
-      </div>
-
-      <div class="form-row">
-        <label class="form-label">Attendant Name</label>
-        <input type="text" class="form-input" id="co-attendant" placeholder="Your name" />
-      </div>
-
-      ${!online ? `
-        <div class="pending-sync-banner">
-          ${getIcon('wifiOff', 16)}
-          <span>Offline — sale will sync when reconnected</span>
-        </div>
-      ` : ''}
-
-      <div class="form-total">
-        <span>Amount to Pay</span>
-        <span class="form-total__value">${formatCurrency(total)}</span>
-      </div>
-
-      <button class="btn btn--primary btn--full" id="co-confirm">
-        ${getIcon('check', 20)}
-        <span>Complete Sale</span>
-      </button>
-    </div>
-  `;
-
-  overlay.appendChild(sheet);
-  document.body.appendChild(overlay);
-
-  let paymentMethod = 'cash';
-
-  // Payment toggle
-  sheet.querySelectorAll('[data-payment]').forEach((btn) => {
-    btn.addEventListener('click', (e) => {
-      e.preventDefault();
-      sheet.querySelectorAll('[data-payment]').forEach((b) => b.classList.remove('active'));
-      btn.classList.add('active');
-      paymentMethod = btn.dataset.payment;
-      const refInput = $('#co-refno', sheet);
-      refInput.classList.toggle('hidden', paymentMethod === 'cash');
-    });
-  });
-
-  // Close
-  $('#close-sheet', sheet).addEventListener('click', closeSheet);
-  overlay.addEventListener('click', (e) => {
-    if (e.target === overlay) closeSheet();
-  });
-
-  // Confirm
-  $('#co-confirm', sheet).addEventListener('click', async () => {
-    const attendant = $('#co-attendant', sheet).value.trim();
-    let receiptNo = $('#co-receipt', sheet).value.trim();
-    const refNo = $('#co-refno', sheet).value.trim();
-
-    if (!receiptNo) receiptNo = generateSaleId(deptId);
-
-    const now = new Date();
-
-    // Save each cart item as a separate sale record (for inventory tracking)
-    for (const c of cart) {
-      const sale = {
-        id: receiptNo + '_' + c.id,
-        department: deptId,
-        type: 'item_sale',
-        itemId: c.id,
-        itemName: c.name,
-        qty: c.qty,
-        unitPrice: c.price,
-        total: c.price * c.qty,
-        paymentMethod,
-        refNo: paymentMethod !== 'cash' ? refNo : '',
-        attendant: attendant || dept.name,
-        soldBy: localStorage.getItem('xclusive_staff_username') || localStorage.getItem('xclusive_staff_name') || attendant || dept.name,
-        username: localStorage.getItem('xclusive_staff_username') || '',
-        timeStarted: saleStartedAt || now.toISOString(),
-        timeSaved: now.toISOString(),
-        timestamp: now.toISOString(),
-        dateStr: todayStr(),
-        receiptNo,
-        locked: true,
-        voided: false,
-        syncStatus: online ? 'synced' : 'pending',
-      };
-      await saveSale(sale);
-    }
-
-    closeSheet();
-    _showToast(`Sale completed — ${formatCurrency(total)}`, 'success');
-    _refreshDashboard();
-    onSuccess();
-  });
-}
-
-// ═══════════════════════════════════════════════════════════════
-//  STOCK IN TAB — add inventory
-// ═══════════════════════════════════════════════════════════════
-
-async function renderStockTab(parent, deptId) {
-  const items = getItemPrices(deptId);
-  const stockRecords = await getStockInByDepartment(deptId);
-  const inventory = await getFullInventory(deptId);
-
-  const wrap = el('div', 'pos-stock');
-
-  // Add stock form
-  const formCard = el('div', 'card');
-  formCard.innerHTML = `
-    <div class="section-header">
-      <span class="section-header__title">Add Stock</span>
-    </div>
-    <div class="form-row">
-      <label class="form-label">Item <span class="form-required">*</span></label>
-      <select class="form-input" id="stock-item-select">
-        <option value="">Select item...</option>
-        ${items.map((i) => `<option value="${i.id}" data-name="${i.name}">${i.name} — ${formatCurrency(i.price)}</option>`).join('')}
-      </select>
-    </div>
-    <div class="form-row" style="margin-top:var(--md);">
-      <label class="form-label">Quantity Added <span class="form-required">*</span></label>
-      <input type="number" class="form-input" id="stock-qty" placeholder="e.g. 24" min="1" />
-    </div>
-    <button class="btn btn--primary btn--full" id="stock-add-btn" style="margin-top:var(--md);">
-      ${getIcon('plus', 20)}
-      <span>Add Stock</span>
-    </button>
-  `;
-  wrap.appendChild(formCard);
-
-  // Current inventory table
-  const invCard = el('div', 'card');
-  invCard.style.marginTop = 'var(--lg)';
-  invCard.innerHTML = `
-    <div class="section-header">
-      <span class="section-header__title">Current Inventory</span>
-    </div>
-    <div class="stock-inventory" id="stock-inventory"></div>
-  `;
-  wrap.appendChild(invCard);
-
-  // Recent stock additions
-  const recentCard = el('div', 'card');
-  recentCard.style.marginTop = 'var(--lg)';
-  recentCard.innerHTML = `
-    <div class="section-header">
-      <span class="section-header__title">Recent Stock Additions</span>
-    </div>
-    <div class="stock-log" id="stock-log"></div>
-  `;
-  wrap.appendChild(recentCard);
-
-  parent.appendChild(wrap);
-
-  // Render inventory
-  const invEl = $('#stock-inventory', wrap);
-  if (items.length === 0) {
-    invEl.innerHTML = '<div class="pos-cart__empty">No items configured</div>';
-  } else {
-    items.forEach((item) => {
-      const inv = inventory[item.id] || { totalIn: 0, totalOut: 0, remaining: 0 };
-      const row = el('div', 'stock-inv-row');
-      const statusClass = inv.remaining <= 0 ? 'stock-inv-row--out' : inv.remaining <= 5 ? 'stock-inv-row--low' : '';
-      row.className = `stock-inv-row ${statusClass}`;
-      row.innerHTML = `
-        <div class="stock-inv-row__name">${item.name}</div>
-        <div class="stock-inv-row__nums">
-          <span class="stock-inv-row__in">IN: ${inv.totalIn}</span>
-          <span class="stock-inv-row__out">OUT: ${inv.totalOut}</span>
-          <span class="stock-inv-row__remaining">${inv.remaining} left</span>
-        </div>
-      `;
-      invEl.appendChild(row);
-    });
-  }
-
-  // Render recent stock log
-  const logEl = $('#stock-log', wrap);
-  const recentStock = [...stockRecords].reverse().slice(0, 10);
-  if (recentStock.length === 0) {
-    logEl.innerHTML = '<div class="pos-cart__empty">No stock added yet</div>';
-  } else {
-    recentStock.forEach((r) => {
-      const date = new Date(r.timestamp).toLocaleString('en-NG', { dateStyle: 'short', timeStyle: 'short' });
-      const row = el('div', 'stock-log-row');
-      row.innerHTML = `
-        <div class="stock-log-row__info">
-          <span class="stock-log-row__name">${r.itemName}</span>
-          <span class="stock-log-row__date">${date}</span>
-        </div>
-        <span class="stock-log-row__qty">+${r.qty}</span>
-      `;
-      logEl.appendChild(row);
-    });
-  }
-
-  // Add stock handler
-  $('#stock-add-btn', wrap).addEventListener('click', async () => {
-    const itemSelect = $('#stock-item-select', wrap);
-    const qtyInput = $('#stock-qty', wrap);
-    const itemId = itemSelect.value;
-    const qty = Number(qtyInput.value);
-
-    if (!itemId) {
-      _showToast('Select an item', 'error');
-      itemSelect.focus();
-      return;
-    }
-    if (!qty || qty <= 0) {
-      _showToast('Enter valid quantity', 'error');
-      qtyInput.focus();
-      return;
-    }
-
-    const itemName = itemSelect.options[itemSelect.selectedIndex].dataset.name;
-    const now = new Date();
-
-    const record = {
-      id: generateId('STK'),
-      department: deptId,
-      itemId,
-      itemName,
-      qty,
-      timestamp: now.toISOString(),
-      dateStr: todayStr(),
-      syncStatus: _isOnline() ? 'synced' : 'pending',
-    };
-
-    await saveStockIn(record);
-    _showToast(`${qty} ${itemName} added to stock`, 'success');
-    _refreshDashboard();
-
-    // Re-render stock tab
-    while (parent.firstChild) parent.removeChild(parent.firstChild);
-    await renderStockTab(parent, deptId);
-  });
-}
-
-// ═══════════════════════════════════════════════════════════════
-//  HELPERS
-// ═══════════════════════════════════════════════════════════════
-
-function closeSheet() {
-  const overlay = $('#modal-overlay');
-  if (overlay) {
-    const sheet = overlay.querySelector('.bottom-sheet');
-    if (sheet) {
-      sheet.style.transform = 'translateY(100%)';
-      sheet.style.transition = 'transform 0.2s ease';
-    }
-    setTimeout(() => overlay.remove(), 200);
-  }
+      close();_showToast(`Sale completed — ${formatCurrency(total)}`,'success');_refreshDashboard();await onSuccess();
+    }catch(err){_showToast(err.message||'Could not save sale','error');}
+  };
 }
