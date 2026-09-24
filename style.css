@@ -101,7 +101,8 @@ input, textarea, select {
   display: flex;
   flex-direction: column;
   height: 100%;
-  max-width: var(--content-max);
+  width: 100%;
+  max-width: 1440px;
   margin: 0 auto;
   position: relative;
 }
@@ -2761,3 +2762,232 @@ section {
     padding: 10px !important;
   }
 }
+
+/* ============================================================
+   FINAL RESPONSIVE LAYOUT FIX
+   Fluid on laptop/desktop; contained and scroll-safe on mobile.
+   ============================================================ */
+
+.app-shell {
+  width: 100%;
+  max-width: 1440px;
+  min-width: 0;
+}
+
+.content-area,
+.dashboard,
+.dashboard > *,
+.card,
+.stat-card,
+.role-card,
+.room-card,
+.games-tile,
+.price-card,
+.table-wrap,
+.table-wrapper {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.dashboard {
+  width: 100%;
+}
+
+.stat-grid,
+.role-grid,
+.room-grid,
+.games-grid,
+.card-container,
+.stock-summary-grid {
+  width: 100%;
+  min-width: 0;
+}
+
+.stat-grid {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.role-grid {
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.room-grid,
+.games-grid {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.role-card--admin {
+  grid-column: 1 / -1;
+}
+
+.table-wrap,
+.table-wrapper {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: visible;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+}
+
+.table-wrap table,
+.table-wrapper table {
+  width: 100%;
+  min-width: 760px;
+  max-width: none;
+  border-collapse: collapse;
+}
+
+.price-row {
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.price-row__name {
+  min-width: 140px;
+  overflow-wrap: anywhere;
+}
+
+.price-row__inputs {
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.price-input-group {
+  min-width: 0;
+}
+
+.stat-card__value,
+.stat-card__label,
+.staff-card,
+.alert-card,
+.bestseller-item__info {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.stat-card h2,
+.stat-card__value,
+.stat-card__label,
+.staff-card__name,
+.alert-card__name {
+  word-break: break-word;
+}
+
+img, svg, i {
+  flex-shrink: 0;
+}
+
+@media (min-width: 769px) {
+  .app-shell {
+    min-height: 100vh;
+  }
+
+  .content-area {
+    padding-left: clamp(16px, 2.5vw, 36px);
+    padding-right: clamp(16px, 2.5vw, 36px);
+  }
+
+  .bottom-nav {
+    width: 100%;
+  }
+}
+
+@media (max-width: 768px) {
+  .app-shell {
+    width: 100%;
+    max-width: 100%;
+  }
+
+  .content-area {
+    width: 100%;
+    max-width: 100%;
+    padding-left: 12px !important;
+    padding-right: 12px !important;
+  }
+
+  .stat-grid,
+  .role-grid,
+  .room-grid,
+  .games-grid,
+  .card-container {
+    grid-template-columns: 1fr;
+  }
+
+  .role-card--admin {
+    grid-column: auto;
+  }
+
+  .price-row {
+    align-items: flex-start;
+  }
+
+  .price-row__name {
+    width: 100%;
+  }
+
+  .price-row__inputs {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .price-input-group {
+    flex: 1 1 120px;
+  }
+
+  .price-input,
+  .price-input--item {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .price-row--add {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(90px, 120px) 44px;
+    align-items: center;
+  }
+
+  .price-row--add .form-input {
+    width: 100% !important;
+    min-width: 0;
+  }
+
+  .price-row--add .icon-btn {
+    width: 44px;
+    min-width: 44px;
+  }
+}
+
+@media (max-width: 480px) {
+  .content-area {
+    padding-left: 10px !important;
+    padding-right: 10px !important;
+  }
+
+  .top-bar {
+    padding-left: 10px;
+    padding-right: 10px;
+  }
+
+  .price-row__inputs {
+    gap: 8px;
+  }
+
+  .price-input-group {
+    flex-basis: calc(50% - 4px);
+  }
+
+  .price-row--add {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .price-row--add .icon-btn {
+    width: 100%;
+  }
+
+  .table-wrap table,
+  .table-wrapper table {
+    min-width: 700px;
+  }
+}
+
