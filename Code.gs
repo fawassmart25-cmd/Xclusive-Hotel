@@ -21,8 +21,8 @@
 var SPREADSHEET_ID = ''; // auto-created by setup()
 var SHEET_NAME = 'Xclusive Hotel Data';
 
-// ═══════════════════════════════════════════════════════════════
-//  SETUP — Run once
+
+ Run once
 // ═══════════════════════════════════════════════════════════════
 
 function setup() {
@@ -65,6 +65,10 @@ function setup() {
     'Department', 'Item ID', 'Item Name', 'Price', 'Active'
   ]);
 
+  ensureSheet_(ss, 'ROOM_SETTINGS', [
+    'Room Number', 'Room Name', 'Short Rest Enabled', 'Updated At'
+  ]);
+
   ensureSheet_(ss, 'DAILY_HISTORY', [
     'Date', 'Reception Total', 'Bar Total', 'Kitchen Total',
     'Game Total', 'Grand Total', 'Cash Total', 'POS Total',
@@ -98,8 +102,8 @@ function ensureSheet_(ss, name, headers) {
   return sheet;
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  doGet — Return config + prices to the app
+
+ Return config + prices to the app
 // ═══════════════════════════════════════════════════════════════
 
 function doGet(e) {
@@ -164,8 +168,8 @@ function getDailyHistory_() {
   return { history: history };
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  doPost — Receive sales/stock from the app
+
+ Receive sales/stock from the app
 // ═══════════════════════════════════════════════════════════════
 
 function doPost(e) {
@@ -187,6 +191,8 @@ function doPost(e) {
       writeStock_(ss, records, now);
     } else if (type === 'prices') {
       writePrices_(ss, records);
+    } else if (type === 'room_settings') {
+      writeRoomSettings_(ss, body.rooms || [], now);
     } else if (type === 'bulk') {
       writeBulk_(ss, body.data, now);
     } else {
@@ -279,6 +285,15 @@ function writeStock_(ss, records, now) {
   if (rows.length) sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, rows[0].length).setValues(rows);
 }
 
+function writeRoomSettings_(ss, rooms, now) {
+  var sheet = ensureSheet_(ss, 'ROOM_SETTINGS', null);
+  if (sheet.getLastRow() > 1) sheet.getRange(2, 1, sheet.getLastRow() - 1, 4).clearContent();
+  var rows = rooms.map(function (room) {
+    return [room.number || '', room.name || '', room.shortRestEnabled === true, now];
+  });
+  if (rows.length) sheet.getRange(2, 1, rows.length, 4).setValues(rows);
+}
+
 function writePrices_(ss, records) {
   var sheet = ensureSheet_(ss, 'PRICES', null);
   // Clear old data (keep header)
@@ -303,8 +318,8 @@ function writeBulk_(ss, data, now) {
   if (data.prices) writePrices_(ss, data.prices);
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  midnightReset — Time trigger at 11:59 PM
+
+ Time trigger at 11:59 PM
 //  Copies today's totals to DAILY_HISTORY and resets.
 //  Also converts short-rest rooms to lodge after 12 AM.
 // ═══════════════════════════════════════════════════════════════
@@ -393,8 +408,8 @@ function addPaymentTotal_(totals, amount, method) {
   else if (m === 'transfer') totals.transfer += Number(amount) || 0;
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  createTimeTrigger — Run once to set up midnight trigger
+
+ Run once to set up midnight trigger
 // ═══════════════════════════════════════════════════════════════
 
 function createTimeTrigger() {
@@ -414,7 +429,7 @@ function createTimeTrigger() {
   Logger.log('Time trigger created: midnightReset runs daily at 11:59 PM');
 }
 
-// ═══════════════════════════════════════════════════════════════
+
 //  Helper
 // ═══════════════════════════════════════════════════════════════
 
@@ -423,3 +438,4 @@ function json_(obj) {
     .createTextOutput(JSON.stringify(obj))
     .setMimeType(ContentService.MimeType.JSON);
 }
+══════════════════════════════════════════════════════════════// ═//  createTimeTrigger —══════════════════════════════════════════════════════════════// ═//  midnightReset —══════════════════════════════════════════════════════════════// ═//  doPost —══════════════════════════════════════════════════════════════// ═//  doGet —══════════════════════════════════════════════════════════════// ═//  SETUP —══════════════════════════════════════════════════════════════// ═
