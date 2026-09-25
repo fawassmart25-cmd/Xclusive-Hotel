@@ -1,77 +1,103 @@
 // ═══════════════════════════════════════════════════════════
-//  Rooms — 20 rooms definition + occupancy helpers
-//  16 Lodge rooms, 4 Short-Rest eligible (rooms 17–20)
+// Rooms — 24 rooms with admin-configurable names and Short Rest settings
 // ═══════════════════════════════════════════════════════════
 
 import { getAllOccupancy, getRoomOccupancy } from './db.js';
 
-// ── Room definitions ─────────────────────────────────────────
-export const ROOMS = [
-  { number: 1, category: 'standard', shortRestEligible: false },
-  { number: 2, category: 'standard', shortRestEligible: false },
-  { number: 3, category: 'standard', shortRestEligible: false },
-  { number: 4, category: 'standard', shortRestEligible: false },
-  { number: 5, category: 'basic', shortRestEligible: false },
-  { number: 6, category: 'basic', shortRestEligible: false },
-  { number: 7, category: 'classic', shortRestEligible: false },
-  { number: 8, category: 'classic', shortRestEligible: false },
-  { number: 9, category: 'deluxe', shortRestEligible: false },
-  { number: 10, category: 'deluxe', shortRestEligible: false },
-  { number: 11, category: 'standard', shortRestEligible: false },
-  { number: 12, category: 'standard', shortRestEligible: false },
-  { number: 13, category: 'classic', shortRestEligible: false },
-  { number: 14, category: 'classic', shortRestEligible: false },
-  { number: 15, category: 'basic', shortRestEligible: false },
-  { number: 16, category: 'basic', shortRestEligible: false },
-  { number: 17, category: 'standard', shortRestEligible: true },
-  { number: 18, category: 'standard', shortRestEligible: true },
-  { number: 19, category: 'classic', shortRestEligible: true },
-  { number: 20, category: 'deluxe', shortRestEligible: true },
-];
+export const MAX_SHORT_REST_ROOMS = 4;
+export const SHORT_REST_RATE_PER_HOUR = 3000;
+export const SHORT_REST_HOURS = [1, 2, 3, 4];
+export const ROOM_SETTINGS_KEY = 'xclusive_room_settings';
+
+const DEFAULT_ROOMS = Array.from({ length: 24 }, (_, index) => ({
+    number: index + 1,
+    name: 'Room ' + (index + 1),
+    category: ['standard', 'standard', 'standard', 'standard', 'basic', 'basic', 'classic', 'classic', 'deluxe', 'deluxe', 'standard', 'standard', 'classic', 'classic', 'basic', 'basic', 'standard', 'standard', 'classic', 'deluxe', 'standard', 'basic', 'classic', 'deluxe'][index],
+    shortRestEnabled: index >= 16 && index < 20,
+}));
+
+export const ROOMS = DEFAULT_ROOMS.map((room) => ({
+    ...room,
+    shortRestEligible: room.shortRestEnabled,
+}));
+
+function normalizeRoomSettings(value) {
+    const incoming = Array.isArray(value) ? value : [];
+    return DEFAULT_ROOMS.map((fallback) => {
+          const item = incoming.find((candidate) => Number(candidate.number) === fallback.number) || {};
+          return {
+                  number: fallback.number,
+                  name: String(item.name || fallback.name).trim() || fallback.name,
+                  category: item.category || fallback.category,
+                  shortRestEnabled: Boolean(item.shortRestEnabled ?? item.shortRestEligible ?? fallback.shortRestEnabled),
+          };
+    });
+}
+
+export function getConfiguredRooms() {
+    let stored = [];
+    try { stored = JSON.parse(localStorage.getItem(ROOM_SETTINGS_KEY) || '[]'); } catch (_) { stored = []; }
+    const rooms = normalizeRoomSettings(stored);
+    return rooms.map((room) => ({
+          ...room,
+          shortRestEligible: room.shortRestEnabled,
+    }));
+}
+
+export function saveRoomSettings(settings) {
+    const rooms = normalizeRoomSettings(settings);
+    if (rooms.filter((room) => room.shortRestEnabled).length > MAX_SHORT_REST_ROOMS) {
+          return { success: false, error: 'Max 4 short rest rooms allowed' };
+    }
+    localStorage.setItem(ROOM_SETTINGS_KEY, JSON.stringify(rooms));
+    return { success: true, rooms: getConfiguredRooms() };
+}
 
 export function getRoomByNumber(num) {
-  return ROOMS.find((r) => r.number === Number(num));
+    return getConfiguredRooms().find((room) => room.number === Number(num));
 }
 
 export async function getRoomStatus(num) {
-  const occ = await getRoomOccupancy(Number(num));
-  if (occ && occ.status === 'occupied') {
-    return {
-      status: 'occupied',
-      guestName: occ.guestName,
-      phone: occ.phone,
-      checkIn: occ.checkIn,
-      checkOut: occ.checkOut,
-      stayType: occ.stayType,
+                       const occ = await getRoomOccupancy(Number(num));
+    if (occ && occ.status === 'occupied') {
+          return {
+                  status: 'occupied',
+                  guestName: occ.guestName,
+                  phone: occ.phone,
+                  checkIn: occ.checkIn,
+                  checkOut: occ.checkOut,
+                  stayType: occ.stayType,
+                  shortRestHours: occ.shortRestHours,
       categoryId: occ.categoryId,
-      saleId: occ.saleId,
-    };
-  }
-  return { status: 'free' };
-}
+                  saleId: occ.saleId,
+                  roomName: occ.roomName,
+            };
+    }
+    return { status: 'free' };
+            }
 
 export async function getAllRoomStatuses() {
-  const allOcc = await getAllOccupancy();
-  const occMap = {};
-  allOcc.forEach((o) => {
-    if (o.status === 'occupied') occMap[o.roomId] = o;
-  });
-  return ROOMS.map((room) => {
-    const occ = occMap[room.number];
-    return {
-      ...room,
-      status: occ ? 'occupied' : 'free',
-      occupancy: occ || null,
-    };
-  });
+    const allOcc = await getAllOccupancy();
+    const occMap = {};
+    allOcc.forEach((occupancy) => {
+          if (occupancy.status === 'occupied') occMap[occupancy.roomId] = occupancy;
+    });
+          return getConfiguredRooms().map((room) => {
+    const occupancy = occMap[room.number];
+                return {
+                  ...room,
+        status: occupancy ? 'occupied' : 'free',
+                        occupancy: occupancy || null,
+                };
+          });
 }
 
 export async function countFreeRooms() {
-  const all = await getAllRoomStatuses();
-  return all.filter((r) => r.status === 'free').length;
-}
+                                   const all = await getAllRoomStatuses();
+                    return all.filter((room) => room.status === 'free').length;
+               }
 
-export async function countOccupiedRooms() {
-  const all = await getAllRoomStatuses();
-  return all.filter((r) => r.status === 'occupied').length;
-}
+      export async function countOccupiedRooms() {
+    const all = await getAllRoomStatuses();
+          return all.filter((room) => room.status === 'occupied').length;
+      }
