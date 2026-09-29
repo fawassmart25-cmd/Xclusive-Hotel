@@ -177,15 +177,13 @@ export async function resetStaleOccupancy(currentDate = todayStr()) {
   return new Promise((resolve, reject) => {
     const transaction = db.transaction('roomOccupancy', 'readwrite');
     const store = transaction.objectStore('roomOccupancy');
-    const request = store.openCursor();
+    const request = store.getAll();
     request.onerror = () => reject(request.error);
     request.onsuccess = () => {
-      const cursor = request.result;
-      if (!cursor) return;
-      const value = cursor.value;
-      const day = value.dayStr || (value.checkIn ? value.checkIn.slice(0, 10) : currentDate);
-      if (value.status === 'occupied' && day !== currentDate) cursor.delete();
-      cursor.continue();
+      for (const value of request.result || []) {
+        const day = value.dayStr || (value.checkIn ? value.checkIn.slice(0, 10) : currentDate);
+        if (value.status === 'occupied' && day !== currentDate) store.delete(value.roomId);
+      }
     };
     transaction.oncomplete = () => resolve(true);
     transaction.onerror = () => reject(transaction.error);
