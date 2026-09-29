@@ -4,7 +4,7 @@
 // ═══════════════════════════════════════════════════════════
 
 const DB_NAME = 'xclusive_hotel';
-const DB_VERSION = 5;
+const DB_VERSION = 4;
 
 let dbPromise = null;
 
