@@ -1,0 +1,10 @@
+{
+  "name": "Xclusive Hotel Manager",
+  "short_name": "Xclusive",
+  "start_url": "/Xclusive-Hotel/",
+  "scope": "/Xclusive-Hotel/",
+  "display": "standalone",
+  "background_color": "#0B0B0F",
+  "theme_color": "#0B0B0F",
+  "description": "Offline-first hotel sales and room management"
+}
