@@ -1316,9 +1316,14 @@ async function registerOfflineShell() {
 }
 
 async function init() {
+      const boot = (stage) => { window.__xclusiveBoot = stage; console.log('Xclusive boot', stage); };
+      boot('registerOfflineShell');
       await registerOfflineShell();
+      boot('resetStaleOccupancy');
       await resetStaleOccupancy();
+      boot('seedStaffStore');
       await seedStaffStore();
+      boot('seedItemStore');
       await seedItemStore(getAllItemPrices);
       const savedRoleId = localStorage.getItem(STORAGE_KEYS.role);
       const savedUsername = localStorage.getItem(STORAGE_KEYS.username);
