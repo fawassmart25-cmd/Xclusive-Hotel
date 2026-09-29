@@ -33,8 +33,7 @@ export async function renderReports({ role='admin', username='', title='Reports'
   if(isDept){
     cards.appendChild(card('chart','My Sales Today',money(sum(todayRows))));
   } else if(isReception){
-    cards.appendChild(card('chart',"Today's Total",money(sum(todayRows))));
-    root.appendChild(cards);
+    // Reception can inspect rows but not Admin financial rollups.
   } else {
     cards.appendChild(card('chart',"Today's Total",money(sum(todayRows))));
     cards.appendChild(card('chart','This Week',money(sum(weekRows))));
@@ -44,7 +43,7 @@ export async function renderReports({ role='admin', username='', title='Reports'
   }
   if(isDept){root.appendChild(cards);}
 
-  if(isAdmin || isReception){
+  if(isAdmin){
     const deptCard=el('div','card');
     deptCard.innerHTML='<div class="section-header"><span class="section-header__title">Sales by Department</span></div>';
     const grid=el('div','stat-grid');

@@ -1,4 +1,4 @@
-﻿// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 //  XCLUSIVE HOTEL MANAGER â€” Application Shell
 //  Phase 5: Analytics Dashboard, Sync, Export, Deployment
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
@@ -26,6 +26,7 @@ import {
       getFullInventory,
       getStockInByDepartment,
       todayStr,
+  resetStaleOccupancy,
 } from './db.js';
 import { getAllRoomStatuses, countFreeRooms, countOccupiedRooms, getConfiguredRooms, saveRoomSettings } from './rooms.js';
 import { getRoomPrices, getAllItemPrices } from './prices.js';
@@ -368,22 +369,15 @@ function normalizeTabId(id) {
 }
 
 function allowedTab(role, tabId) {
-      tabId = normalizeTabId(tabId);
-
-  if (tabId === 'dashboard' || tabId === 'reports') return true;
-      if (tabId === 'stock') return role.isAdmin || role.id === 'reception';
-      if (tabId === 'staff' || tabId === 'analysis' || tabId === 'pricemanager' || tabId === 'settings') return role.isAdmin;
-
-  // Reception is a supervisor/cashier and may sell for every department.
-  if (role.isAdmin || role.id === 'reception') {
-          return ['reception', 'bar', 'kitchen', 'games'].includes(tabId);
-  }
-
-  // Department staff may sell only within their own department.
+  tabId = normalizeTabId(tabId);
+  if (!role) return false;
+  if (tabId === 'dashboard') return role.isAdmin || role.id === 'reception';
+  if (tabId === 'reports') return true;
+  if (tabId === 'stock') return role.isAdmin || role.id === 'reception';
+  if (tabId === 'staff' || tabId === 'analysis' || tabId === 'pricemanager' || tabId === 'settings') return role.isAdmin;
+  if (role.isAdmin || role.id === 'reception') return ['reception', 'bar', 'kitchen', 'games'].includes(tabId);
   if (tabId === 'games') return role.id === 'game';
-      if (['bar', 'kitchen'].includes(tabId)) return role.id === tabId;
-      if (tabId === 'reception') return false;
-
+  if (tabId === 'bar' || tabId === 'kitchen') return role.id === tabId;
   return false;
 }
 
@@ -1315,7 +1309,15 @@ async function seedStaffStore() {
       return seeds;
 }
 
+async function registerOfflineShell() {
+  if ('serviceWorker' in navigator) {
+    try { await navigator.serviceWorker.register(`${import.meta.env.BASE_URL}service-worker.js`); } catch (_) {}
+  }
+}
+
 async function init() {
+      await registerOfflineShell();
+      await resetStaleOccupancy();
       await seedStaffStore();
       await seedItemStore(getAllItemPrices);
       const savedRoleId = localStorage.getItem(STORAGE_KEYS.role);
@@ -1335,6 +1337,9 @@ async function init() {
       window.addEventListener('popstate', () => { if (state.currentRole) renderApp(); });
       window.addEventListener('online', updateOnlineStatus);
       window.addEventListener('offline', updateOnlineStatus);
+      document.addEventListener('visibilitychange', () => { if (!document.hidden) updateOnlineStatus(); });
+      setInterval(() => { if (navigator.onLine) updateOnlineStatus(); }, 60000);
+      await updateOnlineStatus();
       if (state.currentRole && state.currentStaffName) renderApp(); else renderLogin();
 }
 

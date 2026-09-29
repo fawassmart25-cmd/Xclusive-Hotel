@@ -4,7 +4,7 @@
 // ═══════════════════════════════════════════════════════════
 
 const DB_NAME = 'xclusive_hotel';
-const DB_VERSION = 4;
+const DB_VERSION = 5;
 
 let dbPromise = null;
 
@@ -143,6 +143,53 @@ export async function getAllOccupancy() {
 export async function clearRoomOccupancy(roomId) {
   const store = await tx('roomOccupancy', 'readwrite');
   return reqToPromise(store.delete(roomId));
+}
+
+// Atomically register a room sale and occupy the room. This prevents a sale
+// being reported without the room state changing, and blocks double booking.
+export async function saveRoomSaleAndOccupancy(sale, occupancy) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(['sales', 'roomOccupancy'], 'readwrite');
+    const salesStore = transaction.objectStore('sales');
+    const occupancyStore = transaction.objectStore('roomOccupancy');
+    const check = occupancyStore.get(occupancy.roomId);
+    check.onerror = () => reject(check.error);
+    check.onsuccess = () => {
+      if (check.result && check.result.status === 'occupied') {
+        transaction.abort();
+        reject(new Error('Room is already occupied. Refresh and try another room.'));
+        return;
+      }
+      salesStore.put(sale);
+      occupancyStore.put(occupancy);
+    };
+    transaction.oncomplete = () => resolve(sale);
+    transaction.onerror = () => reject(transaction.error || new Error('Could not save room check-in.'));
+    transaction.onabort = () => reject(transaction.error || new Error('Room check-in was not saved.'));
+  });
+}
+
+// At the first app open after midnight, release yesterday's occupancy only.
+// Sales remain untouched so reports and history are preserved.
+export async function resetStaleOccupancy(currentDate = todayStr()) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction('roomOccupancy', 'readwrite');
+    const store = transaction.objectStore('roomOccupancy');
+    const request = store.openCursor();
+    request.onerror = () => reject(request.error);
+    request.onsuccess = () => {
+      const cursor = request.result;
+      if (!cursor) return;
+      const value = cursor.value;
+      const day = value.dayStr || (value.checkIn ? value.checkIn.slice(0, 10) : currentDate);
+      if (value.status === 'occupied' && day !== currentDate) cursor.delete();
+      cursor.continue();
+    };
+    transaction.oncomplete = () => resolve(true);
+    transaction.onerror = () => reject(transaction.error);
+  });
 }
 
 // ── Utility: generate IDs ────────────────────────────────────

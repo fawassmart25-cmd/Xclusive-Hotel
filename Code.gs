@@ -1,441 +1,170 @@
 /**
- * ════════════════════════════════════════════════════════════════
- *  XCLUSIVE HOTEL MANAGER — Google Apps Script Backend (Code.gs)
- *  Deploy as a Web App. Paste this into script.google.com.
- * ════════════════════════════════════════════════════════════════
- *
- *  SETUP:
- *  1. Go to https://script.google.com → New Project
- *  2. Paste this entire file
- *  3. Run setup() once (creates the Google Sheet + tabs)
- *  4. Deploy → New Deployment → Web App
- *     - Execute as: Me
- *     - Who has access: Anyone
- *  5. Copy the deployment URL → paste into the app's Sync settings
- *
- *  SHEET TABS CREATED:
- *  Reception, Bar, Kitchen, Game, Stock, CONFIG_DEPARTMENTS,
- *  PRICES, DAILY_HISTORY
+ * Xclusive Hotel Manager - Google Apps Script backend.
+ * Supports both the current flat sale payload and the older {type, records} envelope.
+ * Deploy as a Web App: execute as Me, access Anyone.
  */
-
-var SPREADSHEET_ID = ''; // auto-created by setup()
+var SPREADSHEET_ID = '';
 var SHEET_NAME = 'Xclusive Hotel Data';
-
-
- Run once
-// ═══════════════════════════════════════════════════════════════
+var LAGOS_TZ = 'Africa/Lagos';
 
 function setup() {
   var ss = SpreadsheetApp.create(SHEET_NAME);
   SPREADSHEET_ID = ss.getId();
-
-  // Create all tabs
-  ensureSheet_(ss, 'Reception', [
-    'Date', 'Receipt No', 'Guest Name', 'Phone', 'Room Number',
-    'Category', 'Stay Type', 'Check-in', 'Check-out', 'Total',
-    'Payment Method', 'Ref No', 'Attendant', 'Sync Time'
-  ]);
-
-  ensureSheet_(ss, 'Bar', [
-    'Date', 'Receipt No', 'Item', 'Qty', 'Unit Price', 'Total',
-    'Payment Method', 'Ref No', 'Attendant', 'Sync Time'
-  ]);
-
-  ensureSheet_(ss, 'Kitchen', [
-    'Date', 'Receipt No', 'Item', 'Qty', 'Unit Price', 'Total',
-    'Payment Method', 'Ref No', 'Attendant', 'Sync Time'
-  ]);
-
-  ensureSheet_(ss, 'Game', [
-    'Date', 'Receipt No', 'Customer', 'Game Type', 'Duration (hrs)',
-    'Unit Price', 'Total', 'Payment Method', 'Attendant',
-    'Start Time', 'End Time', 'Sync Time'
-  ]);
-
-  ensureSheet_(ss, 'Stock', [
-    'Date', 'Stock ID', 'Department', 'Item', 'Qty Added',
-    'Attendant', 'Sync Time'
-  ]);
-
-  ensureSheet_(ss, 'CONFIG_DEPARTMENTS', [
-    'ID', 'Name', 'Active', 'Color'
-  ]);
-
-  ensureSheet_(ss, 'PRICES', [
-    'Department', 'Item ID', 'Item Name', 'Price', 'Active'
-  ]);
-
-  ensureSheet_(ss, 'ROOM_SETTINGS', [
-    'Room Number', 'Room Name', 'Short Rest Enabled', 'Updated At'
-  ]);
-
-  ensureSheet_(ss, 'DAILY_HISTORY', [
-    'Date', 'Reception Total', 'Bar Total', 'Kitchen Total',
-    'Game Total', 'Grand Total', 'Cash Total', 'POS Total',
-    'Transfer Total', 'Rooms Occupied', 'Total Sales Count'
-  ]);
-
-  // Save ID to project properties
+  ensureSheet_(ss, 'Reception', ['Date','Receipt No','Guest Name','Phone','Room Number','Category','Stay Type','Check-in','Check-out','Total','Payment Method','Ref No','Attendant','Sync Time','Sale ID','Status','Checked Out At']);
+  ensureSheet_(ss, 'Bar', ['Date','Receipt No','Item','Qty','Unit Price','Total','Payment Method','Ref No','Attendant','Sync Time','Sale ID','Status']);
+  ensureSheet_(ss, 'Kitchen', ['Date','Receipt No','Item','Qty','Unit Price','Total','Payment Method','Ref No','Attendant','Sync Time','Sale ID','Status']);
+  ensureSheet_(ss, 'Game', ['Date','Receipt No','Customer','Game Type','Duration (hrs)','Unit Price','Total','Payment Method','Attendant','Start Time','End Time','Sync Time','Sale ID','Status']);
+  ensureSheet_(ss, 'Stock', ['Date','Stock ID','Department','Item','Qty Added','Attendant','Sync Time']);
+  ensureSheet_(ss, 'CONFIG_DEPARTMENTS', ['ID','Name','Active','Color']);
+  ensureSheet_(ss, 'PRICES', ['Department','Item ID','Item Name','Price','Active']);
+  ensureSheet_(ss, 'ROOM_SETTINGS', ['Room Number','Room Name','Short Rest Enabled','Updated At']);
+  ensureSheet_(ss, 'DAILY_HISTORY', ['Date','Reception Total','Bar Total','Kitchen Total','Game Total','Grand Total','Cash Total','POS Total','Transfer Total','Rooms Occupied','Total Sales Count']);
   PropertiesService.getScriptProperties().setProperty('SPREADSHEET_ID', SPREADSHEET_ID);
-
-  Logger.log('Setup complete! Spreadsheet ID: ' + SPREADSHEET_ID);
-  Logger.log('URL: ' + ss.getUrl());
+  createTimeTrigger();
   return ss.getUrl();
 }
 
 function getSS_() {
-  if (!SPREADSHEET_ID) {
-    SPREADSHEET_ID = PropertiesService.getScriptProperties().getProperty('SPREADSHEET_ID');
-  }
-  return SpreadsheetApp.openById(SPREADSHEET_ID);
+  var id = SPREADSHEET_ID || PropertiesService.getScriptProperties().getProperty('SPREADSHEET_ID');
+  if (!id) throw new Error('Spreadsheet is not configured. Run setup() once.');
+  return SpreadsheetApp.openById(id);
 }
 
 function ensureSheet_(ss, name, headers) {
-  var sheet = ss.getSheetByName(name);
-  if (!sheet) {
-    sheet = ss.insertSheet(name);
-  }
+  var sheet = ss.getSheetByName(name) || ss.insertSheet(name);
   if (headers && sheet.getLastRow() === 0) {
-    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
-    sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold');
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]).setFontWeight('bold');
+    sheet.setFrozenRows(1);
   }
   return sheet;
 }
 
+function json_(obj) {
+  return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
+}
 
- Return config + prices to the app
-// ═══════════════════════════════════════════════════════════════
+function lagosDate_(date) { return Utilities.formatDate(date || new Date(), LAGOS_TZ, 'yyyy-MM-dd'); }
+function lagosDateOffset_(days) {
+  var d = new Date();
+  d.setDate(d.getDate() + days);
+  return lagosDate_(d);
+}
+function nowLagos_() { return Utilities.formatDate(new Date(), LAGOS_TZ, 'yyyy-MM-dd HH:mm:ss'); }
+function dateKey_(value) {
+  if (value instanceof Date) return Utilities.formatDate(value, LAGOS_TZ, 'yyyy-MM-dd');
+  var s = String(value || '');
+  var m = s.match(/(\d{4}-\d{2}-\d{2})/);
+  return m ? m[1] : s.slice(0, 10);
+}
 
 function doGet(e) {
-  var action = (e && e.parameter && e.parameter.action) || 'getConfig';
-
-  if (action === 'getConfig') {
-    return json_(getConfig_());
-  }
-
-  if (action === 'getDailyHistory') {
-    return json_(getDailyHistory_());
-  }
-
-  return json_({ error: 'Unknown action: ' + action });
+  var action = (e && e.parameter && e.parameter.action) || 'status';
+  if (action === 'getConfig') return json_(getConfig_());
+  if (action === 'getDailyHistory') return json_(getDailyHistory_());
+  return json_({ status: 'ok', message: 'Xclusive Hotel API live', time: nowLagos_() });
 }
 
 function getConfig_() {
-  var ss = getSS_();
-
-  var deptSheet = ss.getSheetByName('CONFIG_DEPARTMENTS');
-  var priceSheet = ss.getSheetByName('PRICES');
-
-  var departments = [];
-  if (deptSheet && deptSheet.getLastRow() > 1) {
-    var deptData = deptSheet.getRange(2, 1, deptSheet.getLastRow() - 1, 4).getValues();
-    deptData.forEach(function (row) {
-      departments.push({
-        id: row[0], name: row[1], active: row[2] === true, color: row[3]
-      });
-    });
-  }
-
-  var prices = {};
-  if (priceSheet && priceSheet.getLastRow() > 1) {
-    var priceData = priceSheet.getRange(2, 1, priceSheet.getLastRow() - 1, 5).getValues();
-    priceData.forEach(function (row) {
-      var dept = row[0];
-      if (!prices[dept]) prices[dept] = [];
-      prices[dept].push({
-        id: row[1], name: row[2], price: row[3], active: row[4] === true
-      });
-    });
-  }
-
+  var ss = getSS_(), departments = [], prices = {};
+  var ds = ss.getSheetByName('CONFIG_DEPARTMENTS');
+  if (ds && ds.getLastRow() > 1) ds.getRange(2,1,ds.getLastRow()-1,4).getValues().forEach(function(r){ departments.push({id:r[0],name:r[1],active:r[2]===true,color:r[3]}); });
+  var ps = ss.getSheetByName('PRICES');
+  if (ps && ps.getLastRow() > 1) ps.getRange(2,1,ps.getLastRow()-1,5).getValues().forEach(function(r){ if(!prices[r[0]]) prices[r[0]]=[]; prices[r[0]].push({id:r[1],name:r[2],price:r[3],active:r[4]===true}); });
   return { departments: departments, prices: prices, timestamp: new Date().toISOString() };
 }
 
 function getDailyHistory_() {
-  var ss = getSS_();
-  var sheet = ss.getSheetByName('DAILY_HISTORY');
-  if (!sheet || sheet.getLastRow() <= 1) return { history: [] };
-
-  var data = sheet.getRange(2, 1, sheet.getLastRow() - 1, 11).getValues();
-  var history = data.map(function (row) {
-    return {
-      date: row[0],
-      reception: row[1], bar: row[2], kitchen: row[3], game: row[4],
-      grandTotal: row[5], cash: row[6], pos: row[7], transfer: row[8],
-      roomsOccupied: row[9], salesCount: row[10]
-    };
-  });
-  return { history: history };
+  var s = getSS_().getSheetByName('DAILY_HISTORY');
+  if (!s || s.getLastRow() <= 1) return { history: [] };
+  return { history: s.getRange(2,1,s.getLastRow()-1,11).getValues().map(function(r){ return {date:dateKey_(r[0]),reception:r[1],bar:r[2],kitchen:r[3],game:r[4],grandTotal:r[5],cash:r[6],pos:r[7],transfer:r[8],roomsOccupied:r[9],salesCount:r[10]}; }) };
 }
-
-
- Receive sales/stock from the app
-// ═══════════════════════════════════════════════════════════════
 
 function doPost(e) {
   try {
-    var body = JSON.parse(e.postData.contents);
-    var type = body.type;
-    var records = body.records || [];
-
-    var ss = getSS_();
-    var now = new Date().toISOString();
-
-    if (type === 'reception') {
-      writeReception_(ss, records, now);
-    } else if (type === 'bar' || type === 'kitchen') {
-      writeItemSales_(ss, type, records, now);
-    } else if (type === 'games') {
-      writeGameSales_(ss, records, now);
-    } else if (type === 'stock') {
-      writeStock_(ss, records, now);
-    } else if (type === 'prices') {
-      writePrices_(ss, records);
-    } else if (type === 'room_settings') {
-      writeRoomSettings_(ss, body.rooms || [], now);
-    } else if (type === 'bulk') {
-      writeBulk_(ss, body.data, now);
-    } else {
-      return json_({ error: 'Unknown type: ' + type });
+    var body = JSON.parse((e && e.postData && e.postData.contents) || '{}');
+    var ss = getSS_(), now = new Date().toISOString();
+    if (body.type && body.records) {
+      var type = String(body.type).toLowerCase();
+      if (type === 'reception') writeReception_(ss, body.records, now);
+      else if (type === 'bar' || type === 'kitchen') writeItemSales_(ss, type, body.records, now);
+      else if (type === 'games' || type === 'game') writeGameSales_(ss, body.records, now);
+      else if (type === 'stock') writeStock_(ss, body.records, now);
+      else if (type === 'prices') writePrices_(ss, body.records);
+      else if (type === 'room_settings') writeRoomSettings_(ss, body.rooms || [], now);
+      else return json_({success:false,error:'Unknown type: '+body.type});
+      return json_({success:true,synced:body.records.length||0,timestamp:now});
     }
-
-    return json_({ success: true, synced: records.length, timestamp: now });
-  } catch (err) {
-    return json_({ error: err.toString() });
-  }
+    if (body.room_settings || body.rooms) { writeRoomSettings_(ss, body.rooms || body.room_settings, now); return json_({success:true,synced:1,timestamp:now}); }
+    if (body.type === 'prices') { writePrices_(ss, body.records || {}); return json_({success:true,synced:0,timestamp:now}); }
+    if (body.department || body.itemName || body.roomNumber || body.gameType) {
+      var dept = String(body.department || 'reception').toLowerCase();
+      if (dept === 'game') dept = 'games';
+      if (dept === 'reception') writeReception_(ss,[body],now);
+      else if (dept === 'bar' || dept === 'kitchen') writeItemSales_(ss,dept,[body],now);
+      else if (dept === 'games') writeGameSales_(ss,[body],now);
+      return json_({success:true,synced:1,timestamp:now});
+    }
+    return json_({success:false,error:'No supported payload found'});
+  } catch (err) { return json_({success:false,error:String(err)}); }
 }
 
 function writeReception_(ss, records, now) {
-  var sheet = ensureSheet_(ss, 'Reception', null);
-  var rows = records.map(function (r) {
-    return [
-      r.dateStr || now.slice(0, 10),
-      r.id,
-      r.guestName || '',
-      r.phone || '',
-      r.roomNumber || '',
-      r.categoryName || '',
-      r.stayType || '',
-      r.checkIn || '',
-      r.checkOut || '',
-      r.total || 0,
-      r.paymentMethod || '',
-      r.refNo || '',
-      r.attendant || '',
-      now
-    ];
-  });
-  if (rows.length) sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, rows[0].length).setValues(rows);
+  var s=ensureSheet_(ss,'Reception',null); var rows=records.map(function(r){ return [r.dateStr||lagosDate_(),r.receiptNo||r.id||'',r.guestName||r.customerName||'',r.phone||'',r.roomNumber||'',r.categoryName||r.categoryId||'',r.stayType||'',r.checkIn||r.timeStarted||'',r.checkOut||'',Number(r.total!=null?r.total:r.amount)||0,r.paymentMethod||'Cash',r.refNo||'',r.attendant||r.soldBy||'',now,r.id||'',r.status||'paid',r.checkedOutAt||'']; });
+  appendUnique_(s,rows,15);
 }
-
 function writeItemSales_(ss, dept, records, now) {
-  var sheetName = dept === 'bar' ? 'Bar' : 'Kitchen';
-  var sheet = ensureSheet_(ss, sheetName, null);
-  var rows = records.map(function (r) {
-    return [
-      r.dateStr || now.slice(0, 10),
-      r.receiptNo || r.id,
-      r.itemName || '',
-      r.qty || 1,
-      r.unitPrice || 0,
-      r.total || 0,
-      r.paymentMethod || '',
-      r.refNo || '',
-      r.attendant || '',
-      now
-    ];
-  });
-  if (rows.length) sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, rows[0].length).setValues(rows);
+  var s=ensureSheet_(ss,dept==='bar'?'Bar':'Kitchen',null); var rows=records.map(function(r){ return [r.dateStr||lagosDate_(),r.receiptNo||r.id||'',r.itemName||'',Number(r.qty!=null?r.qty:r.quantity)||1,Number(r.unitPrice)||0,Number(r.total!=null?r.total:r.amount)||0,r.paymentMethod||'Cash',r.refNo||'',r.attendant||r.soldBy||'',now,r.id||'',r.status||'paid']; });
+  appendUnique_(s,rows,11);
 }
-
 function writeGameSales_(ss, records, now) {
-  var sheet = ensureSheet_(ss, 'Game', null);
-  var rows = records.map(function (r) {
-    return [
-      r.dateStr || now.slice(0, 10),
-      r.receiptNo || r.id,
-      r.customerName || '',
-      r.gameType || '',
-      r.duration || 1,
-      r.unitPrice || 0,
-      r.total || 0,
-      r.paymentMethod || '',
-      r.attendant || '',
-      r.startTime || '',
-      r.endTime || '',
-      now
-    ];
-  });
-  if (rows.length) sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, rows[0].length).setValues(rows);
+  var s=ensureSheet_(ss,'Game',null); var rows=records.map(function(r){ return [r.dateStr||lagosDate_(),r.receiptNo||r.id||'',r.customerName||'',r.gameType||r.itemName||'',Number(r.duration)||1,Number(r.unitPrice)||0,Number(r.total!=null?r.total:r.amount)||0,r.paymentMethod||'Cash',r.attendant||r.soldBy||'',r.startTime||r.timeStarted||'',r.endTime||'',now,r.id||'',r.status||'paid']; });
+  appendUnique_(s,rows,13);
 }
-
+function appendUnique_(sheet, rows, idColumn) {
+  if (!rows.length) return;
+  var existing={};
+  if(sheet.getLastRow()>1) sheet.getRange(2,idColumn,sheet.getLastRow()-1,1).getValues().forEach(function(r){ existing[String(r[0])]=true; });
+  var fresh=rows.filter(function(r){ var id=String(r[idColumn-1]||''); if(!id || existing[id]) return false; existing[id]=true; return true; });
+  if(fresh.length) sheet.getRange(sheet.getLastRow()+1,1,fresh.length,fresh[0].length).setValues(fresh);
+}
 function writeStock_(ss, records, now) {
-  var sheet = ensureSheet_(ss, 'Stock', null);
-  var rows = records.map(function (r) {
-    return [
-      r.dateStr || now.slice(0, 10),
-      r.id,
-      r.department || '',
-      r.itemName || '',
-      r.qty || 0,
-      r.attendant || '',
-      now
-    ];
-  });
-  if (rows.length) sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, rows[0].length).setValues(rows);
+  var s=ensureSheet_(ss,'Stock',null); var rows=records.map(function(r){ return [r.dateStr||lagosDate_(),r.id||'',r.department||'',r.itemName||r.name||'',Number(r.qty)||0,r.attendant||r.soldBy||'',now]; });
+  if(rows.length) s.getRange(s.getLastRow()+1,1,rows.length,rows[0].length).setValues(rows);
 }
-
 function writeRoomSettings_(ss, rooms, now) {
-  var sheet = ensureSheet_(ss, 'ROOM_SETTINGS', null);
-  if (sheet.getLastRow() > 1) sheet.getRange(2, 1, sheet.getLastRow() - 1, 4).clearContent();
-  var rows = rooms.map(function (room) {
-    return [room.number || '', room.name || '', room.shortRestEnabled === true, now];
-  });
-  if (rows.length) sheet.getRange(2, 1, rows.length, 4).setValues(rows);
+  var s=ensureSheet_(ss,'ROOM_SETTINGS',null); if(s.getLastRow()>1)s.getRange(2,1,s.getLastRow()-1,4).clearContent();
+  var rows=(rooms||[]).map(function(r){return [r.number||'',r.name||'',r.shortRestEnabled===true,now];}); if(rows.length)s.getRange(2,1,rows.length,4).setValues(rows);
 }
-
 function writePrices_(ss, records) {
-  var sheet = ensureSheet_(ss, 'PRICES', null);
-  // Clear old data (keep header)
-  if (sheet.getLastRow() > 1) {
-    sheet.getRange(2, 1, sheet.getLastRow() - 1, 5).clearContent();
-  }
+  var s=ensureSheet_(ss,'PRICES',null); if(s.getLastRow()>1)s.getRange(2,1,s.getLastRow()-1,5).clearContent(); var rows=[];
+  Object.keys(records||{}).forEach(function(d){(records[d]||[]).forEach(function(i){rows.push([d,i.id,i.name,i.price,i.active]);});}); if(rows.length)s.getRange(2,1,rows.length,5).setValues(rows);
+}
+
+function archiveDay_(ss, date) {
+  var archive = ensureSheet_(ss, 'Sales_' + date, ['Date','Department','Sale ID','Receipt No','Item / Room','Qty','Amount','Payment Method','Staff','Customer','Status','Archived At']);
+  if (archive.getLastRow() > 1) return;
   var rows = [];
-  Object.keys(records).forEach(function (dept) {
-    records[dept].forEach(function (item) {
-      rows.push([dept, item.id, item.name, item.price, item.active]);
+  function addRows(name, dept, mapper) {
+    var sheet = ss.getSheetByName(name);
+    if (!sheet || sheet.getLastRow() <= 1) return;
+    sheet.getRange(2, 1, sheet.getLastRow() - 1, sheet.getLastColumn()).getValues().forEach(function (r) {
+      if (dateKey_(r[0]) === date) rows.push(mapper(r));
     });
-  });
-  if (rows.length) sheet.getRange(2, 1, rows.length, 5).setValues(rows);
+  }
+  addRows('Reception', 'reception', function (r) { return [date, 'reception', r[14] || '', r[1] || '', 'Room ' + (r[4] || ''), 1, r[9] || 0, r[10] || '', r[12] || '', r[2] || '', r[15] || 'paid', nowLagos_()]; });
+  ['Bar', 'Kitchen'].forEach(function (name) { addRows(name, name.toLowerCase(), function (r) { return [date, name.toLowerCase(), r[10] || '', r[1] || '', r[2] || '', r[3] || 1, r[5] || 0, r[6] || '', r[8] || '', '', r[11] || 'paid', nowLagos_()]; }); });
+  addRows('Game', 'games', function (r) { return [date, 'games', r[12] || '', r[1] || '', r[3] || '', r[4] || 1, r[6] || 0, r[7] || '', r[8] || '', r[2] || '', r[13] || 'paid', nowLagos_()]; });
+  if (rows.length) { archive.getRange(2, 1, rows.length, rows[0].length).setValues(rows); archive.getRange(2, 1, rows.length, 12).setBackground('#eeeeee'); }
 }
-
-function writeBulk_(ss, data, now) {
-  if (data.reception) writeReception_(ss, data.reception, now);
-  if (data.bar) writeItemSales_(ss, 'bar', data.bar, now);
-  if (data.kitchen) writeItemSales_(ss, 'kitchen', data.kitchen, now);
-  if (data.games) writeGameSales_(ss, data.games, now);
-  if (data.stock) writeStock_(ss, data.stock, now);
-  if (data.prices) writePrices_(ss, data.prices);
-}
-
-
- Time trigger at 11:59 PM
-//  Copies today's totals to DAILY_HISTORY and resets.
-//  Also converts short-rest rooms to lodge after 12 AM.
-// ═══════════════════════════════════════════════════════════════
-
 function midnightReset() {
-  var ss = getSS_();
-  var today = new Date().toISOString().slice(0, 10);
-
-  // Calculate today's totals from each sheet
-  var totals = {
-    reception: 0, bar: 0, kitchen: 0, game: 0,
-    cash: 0, pos: 0, transfer: 0,
-    salesCount: 0, roomsOccupied: 0
-  };
-
-  // Reception
-  var recSheet = ss.getSheetByName('Reception');
-  if (recSheet && recSheet.getLastRow() > 1) {
-    var recData = recSheet.getRange(2, 1, recSheet.getLastRow() - 1, 14).getValues();
-    recData.forEach(function (row) {
-      if (String(row[0]) === today) {
-        totals.reception += Number(row[9]) || 0;
-        totals.salesCount++;
-        addPayment_(totals, row[10]);
-        if (row[7] && !row[8]) totals.roomsOccupied++; // checked in but not out
-      }
-    });
-  }
-
-  // Bar + Kitchen
-  ['Bar', 'Kitchen'].forEach(function (sheetName) {
-    var s = ss.getSheetByName(sheetName);
-    if (s && s.getLastRow() > 1) {
-      var d = s.getRange(2, 1, s.getLastRow() - 1, 10).getValues();
-      d.forEach(function (row) {
-        if (String(row[0]) === today) {
-          totals[sheetName === 'Bar' ? 'bar' : 'kitchen'] += Number(row[5]) || 0;
-          totals.salesCount++;
-          addPayment_(totals, row[6]);
-        }
-      });
-    }
-  });
-
-  // Game
-  var gameSheet = ss.getSheetByName('Game');
-  if (gameSheet && gameSheet.getLastRow() > 1) {
-    var gd = gameSheet.getRange(2, 1, gameSheet.getLastRow() - 1, 12).getValues();
-    gd.forEach(function (row) {
-      if (String(row[0]) === today) {
-        totals.game += Number(row[6]) || 0;
-        totals.salesCount++;
-        addPayment_(totals, row[7]);
-      }
-    });
-  }
-
-  var grandTotal = totals.reception + totals.bar + totals.kitchen + totals.game;
-
-  // Write to DAILY_HISTORY
-  var histSheet = ensureSheet_(ss, 'DAILY_HISTORY', null);
-  histSheet.appendRow([
-    today, totals.reception, totals.bar, totals.kitchen, totals.game,
-    grandTotal, totals.cash, totals.pos, totals.transfer,
-    totals.roomsOccupied, totals.salesCount
-  ]);
-
-  Logger.log('Midnight reset complete for ' + today + '. Grand total: ' + grandTotal);
+  var ss=getSS_(), date=lagosDateOffset_(-1), hist=ensureSheet_(ss,'DAILY_HISTORY',null);
+  archiveDay_(ss,date);
+  var existing=false; if(hist.getLastRow()>1) hist.getRange(2,1,hist.getLastRow()-1,1).getValues().forEach(function(r){if(dateKey_(r[0])===date)existing=true;});
+  if(existing)return;
+  var t={reception:0,bar:0,kitchen:0,game:0,cash:0,pos:0,transfer:0,salesCount:0,roomsOccupied:0};
+  function pay(amount,method){var m=String(method||'cash').toLowerCase(); if(m==='cash')t.cash+=Number(amount)||0; else if(m==='pos')t.pos+=Number(amount)||0; else if(m==='transfer')t.transfer+=Number(amount)||0;}
+  function scan(name,dept,amountCol,paymentCol,checkoutCol){var s=ss.getSheetByName(name);if(!s||s.getLastRow()<=1)return;s.getRange(2,1,s.getLastRow()-1,s.getLastColumn()).getValues().forEach(function(r){if(dateKey_(r[0])!==date)return;t[dept]+=Number(r[amountCol])||0;t.salesCount++;pay(r[amountCol],r[paymentCol]);if(name==='Reception'&&!r[checkoutCol])t.roomsOccupied++;});}
+  scan('Reception','reception',9,10,16); scan('Bar','bar',5,6,-1); scan('Kitchen','kitchen',5,6,-1); scan('Game','game',6,7,-1);
+  hist.appendRow([date,t.reception,t.bar,t.kitchen,t.game,t.reception+t.bar+t.kitchen+t.game,t.cash,t.pos,t.transfer,t.roomsOccupied,t.salesCount]);
 }
-
-function addPayment_(totals, method) {
-  var m = String(method).toLowerCase();
-  if (m === 'cash') totals.cash += 0; // payment already added to dept total
-  // Payment breakdown is tracked by reading the method column
-  // We count totals by method here
-  if (m === 'cash') totals.cash = (totals.cash || 0);
-  // Actually we need to add the sale amount to the right payment bucket
-  // This is handled in the caller by passing amounts
-}
-
-// Better approach: track payment totals properly
-function addPaymentTotal_(totals, amount, method) {
-  var m = String(method).toLowerCase();
-  if (m === 'cash') totals.cash += Number(amount) || 0;
-  else if (m === 'pos') totals.pos += Number(amount) || 0;
-  else if (m === 'transfer') totals.transfer += Number(amount) || 0;
-}
-
-
- Run once to set up midnight trigger
-// ═══════════════════════════════════════════════════════════════
-
-function createTimeTrigger() {
-  // Delete existing triggers
-  ScriptApp.getProjectTriggers().forEach(function (t) {
-    ScriptApp.deleteTrigger(t);
-  });
-
-  // Create daily trigger at 11:59 PM
-  ScriptApp.newTrigger('midnightReset')
-    .timeBased()
-    .everyDays(1)
-    .atHour(23)
-    .nearMinute(59)
-    .create();
-
-  Logger.log('Time trigger created: midnightReset runs daily at 11:59 PM');
-}
-
-
-//  Helper
-// ═══════════════════════════════════════════════════════════════
-
-function json_(obj) {
-  return ContentService
-    .createTextOutput(JSON.stringify(obj))
-    .setMimeType(ContentService.MimeType.JSON);
-}
-══════════════════════════════════════════════════════════════// ═//  createTimeTrigger —══════════════════════════════════════════════════════════════// ═//  midnightReset —══════════════════════════════════════════════════════════════// ═//  doPost —══════════════════════════════════════════════════════════════// ═//  doGet —══════════════════════════════════════════════════════════════// ═//  SETUP —══════════════════════════════════════════════════════════════// ═
+function createTimeTrigger(){ ScriptApp.getProjectTriggers().forEach(function(t){ScriptApp.deleteTrigger(t);}); ScriptApp.newTrigger('midnightReset').timeBased().everyDays(1).atHour(0).nearMinute(5).inTimezone(LAGOS_TZ).create(); }

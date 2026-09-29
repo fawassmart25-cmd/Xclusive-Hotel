@@ -138,19 +138,23 @@ export async function syncToGoogleSheets() {
               syncedSales += 1;
        }
 
-     // Stock requires a different legacy payload and is left pending rather
-     // than being falsely marked synced by the date-tab API.
+     let syncedStock = 0;
      if (pendingStock.length > 0) {
-            return {
-                     success: false,
-                     synced: syncedSales,
-                     error: 'Pending stock records require the stock sync endpoint',
-            };
+       const stockResponse = await fetch(url, {
+         method: 'POST',
+         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+         body: JSON.stringify({ type: 'stock', records: pendingStock }),
+       });
+       if (!stockResponse.ok) return { success: false, synced: syncedSales, error: 'Stock sync request failed (' + stockResponse.status + ')' };
+       const stockResult = await stockResponse.json();
+       if (failedResponse(stockResult)) return { success: false, synced: syncedSales, error: stockResult.error || 'Stock sync failed' };
+       await markStockSynced(pendingStock);
+       syncedStock = pendingStock.length;
      }
 
      const syncTime = new Date().toISOString();
        localStorage.setItem(LAST_SYNC_KEY, syncTime);
-       return { success: true, synced: syncedSales, syncTime };
+       return { success: true, synced: syncedSales + syncedStock, syncTime };
   } catch (err) {
        return { success: false, error: err.message || 'Network error during sync' };
   }

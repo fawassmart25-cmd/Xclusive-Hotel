@@ -71,7 +71,7 @@ function openCheckout(deptId,dept,cart,timeStarted,onSuccess){
     try{
       let syncPending=false;
       for(const c of cart){
-        const sale={id:generateSaleId(deptId)+'_'+c.id,department:deptId,type:'item_sale',itemId:c.id,itemName:c.name,qty:c.qty,unitPrice:c.price,total:c.price*c.qty,paymentMethod:payment,refNo:payment==='cash'?'':ref,customerName:customer,soldBy:username,username,timeStarted:timeStarted||now.toISOString(),timeSaved:now.toISOString(),timestamp:now.toISOString(),dateStr:todayStr(),locked:true,voided:false,syncStatus:'pending'};
+        const sale={id:generateSaleId(deptId)+'_'+c.id,department:deptId,type:'item_sale',status:'paid',itemId:c.id,itemName:c.name,qty:c.qty,unitPrice:c.price,total:c.price*c.qty,paymentMethod:payment,refNo:payment==='cash'?'':ref,customerName:customer,soldBy:username,username,timeStarted:timeStarted||now.toISOString(),timeSaved:now.toISOString(),timestamp:now.toISOString(),dateStr:todayStr(),locked:true,voided:false,syncStatus:'pending'};
         await saveItemSale(sale);
         const syncResult=await syncSaleImmediately(sale);
         if(!syncResult.success) syncPending=true;

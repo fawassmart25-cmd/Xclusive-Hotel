@@ -16,6 +16,8 @@ import {
 } from './prices.js';
 import {
    saveSale,
+   getSale,
+   saveRoomSaleAndOccupancy,
    saveCustomer,
    getCustomerByPhone,
    setRoomOccupancy,
@@ -463,7 +465,22 @@ async function handleSellSave(room, sheet, ctx) {
        syncStatus: 'pending',
   };
 
-  await saveSale(sale);
+  const occupancy = {
+    roomId: room.number,
+    status: 'occupied',
+    dayStr: sale.dateStr,
+    roomName: room.name || `Room ${room.number}`,
+    guestName,
+    phone,
+    categoryId: room.category,
+    stayType: ctx.stayType,
+    shortRestHours: ctx.stayType === 'shortRest' ? shortRestHours : null,
+    checkIn: checkInTime.toISOString(),
+    checkOut: checkOutTime.toISOString(),
+    saleId,
+    total,
+  };
+  await saveRoomSaleAndOccupancy(sale, occupancy);
    const saleSyncResult = await syncSaleImmediately(sale);
    const saleSyncPending = !saleSyncResult.success;
 
@@ -484,24 +501,7 @@ async function handleSellSave(room, sheet, ctx) {
               await saveCustomer(existing);
        }
   }
-
-  // Mark room occupied
-  await setRoomOccupancy({
-       roomId: room.number,
-       status: 'occupied',
-       roomName: room.name || `Room ${room.number}`,
-       guestName,
-       phone,
-       categoryId: room.category,
-       stayType: ctx.stayType,
-       shortRestHours: ctx.stayType === 'shortRest' ? shortRestHours : null,
-       checkIn: checkInTime.toISOString(),
-       checkOut: checkOutTime.toISOString(),
-       saleId,
-       total,
-  });
-
-  closeSheet();
+closeSheet();
    _showToast(saleSyncPending ? `Room ${room.number} saved; Google Sheets sync pending` : `Room ${room.number} sold to ${guestName}`, saleSyncPending ? '' : 'success');
    _refreshDashboard();
 
@@ -600,6 +600,8 @@ function openCheckoutSheet(room) {
                        id: generateSaleId('reception'),
                        department: 'reception',
                        type: 'extra_charge',
+        parentSaleId: occ.saleId,
+        status: 'paid',
                        roomNumber: room.number,
                        guestName: occ.guestName,
                        total: extra,
@@ -620,7 +622,14 @@ function openCheckoutSheet(room) {
               extraSyncPending = !extraSyncResult.success;
        }
 
-                                                 await clearRoomOccupancy(room.number);
+       const originalSale = await getSale(occ.saleId);
+       if (originalSale) {
+         originalSale.status = 'checked_out';
+         originalSale.checkedOutAt = new Date().toISOString();
+         originalSale.checkedOutBy = localStorage.getItem('xclusive_staff_username') || localStorage.getItem('xclusive_staff_name') || 'Reception';
+         await saveSale(originalSale);
+       }
+       await clearRoomOccupancy(room.number);
        closeSheet();
        _showToast(extraSyncPending ? `Room ${room.number} checked out; extra charge sync pending` : `Room ${room.number} checked out`, extraSyncPending ? '' : 'success');
        _refreshDashboard();

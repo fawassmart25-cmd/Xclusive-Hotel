@@ -6,6 +6,8 @@
 import {
   getItemsByDepartment,
   saveItemSale,
+  saveSale,
+  getSale,
   saveGameSession,
   getActiveGameSessions,
   generateSaleId,
@@ -317,9 +319,40 @@ function openGameSheet(parentContainer, deptId, items, preselectedItem) {
       syncStatus: 'pending',
     };
 
+    const immediateSale = {
+      id: generateSaleId('games'),
+      department: 'games',
+      type: 'game_sale',
+      status: 'paid',
+      sessionId,
+      gameType: typeName,
+      gameTypeId: typeId,
+      itemName: typeName,
+      customerName: customer,
+      duration,
+      unitPrice: typePrice,
+      total,
+      paymentMethod,
+      refNo: paymentMethod !== 'cash' ? refNo : '',
+      attendant: attendant || 'Game Lounge',
+      soldBy: localStorage.getItem('xclusive_staff_username') || localStorage.getItem('xclusive_staff_name') || attendant || 'Game',
+      username: localStorage.getItem('xclusive_staff_username') || '',
+      timeStarted: session.startTime,
+      timeSaved: now.toISOString(),
+      timestamp: now.toISOString(),
+      dateStr: todayStr(),
+      receiptNo: generateSaleId('games'),
+      locked: true,
+      voided: false,
+      syncStatus: 'pending',
+    };
+    await saveSale(immediateSale);
+    const immediateSync = await syncSaleImmediately(immediateSale);
+    session.saleId = immediateSale.id;
+    session.syncStatus = immediateSync.success ? 'synced' : 'pending';
     await saveGameSession(session);
     closeSheet();
-    _showToast(`Session started for ${customer}`, 'success');
+    _showToast(immediateSync.success ? `Session started and paid for ${customer}` : `Session started; sync pending`, immediateSync.success ? 'success' : '');
     _refreshDashboard();
 
     // Re-render games
@@ -348,51 +381,17 @@ async function endSession(session) {
   const finalDuration = Math.max(session.duration, actualHours);
   const finalTotal = session.unitPrice * finalDuration;
 
-  // Save as sale
-  const sale = {
-    id: generateSaleId('games'),
-    department: 'games',
-    type: 'game_sale',
-    gameType: session.gameType,
-    gameTypeId: session.gameTypeId,
-    customerName: session.customerName,
-    duration: finalDuration,
-    unitPrice: session.unitPrice,
-    total: finalTotal,
-    paymentMethod: session.paymentMethod,
-    refNo: session.refNo,
-    attendant: session.attendant,
-    soldBy: localStorage.getItem('xclusive_staff_username') || localStorage.getItem('xclusive_staff_name') || session.attendant || 'Game',
-    username: localStorage.getItem('xclusive_staff_username') || '',
-    timeStarted: session.startTime,
-    timeSaved: endTime.toISOString(),
-    startTime: session.startTime,
-    endTime: endTime.toISOString(),
-    timestamp: endTime.toISOString(),
-    dateStr: todayStr(),
-    receiptNo: generateSaleId('games'),
-    locked: true,
-    voided: false,
-    syncStatus: 'pending',
-  };
-
-  await saveItemSale({
-    ...sale,
-    itemId: session.gameTypeId,
-    itemName: session.gameType,
-    qty: 1,
-    unitPrice: finalTotal,
-    total: finalTotal,
-  });
-  const saleSyncResult = await syncSaleImmediately(sale);
-
-  // Mark session as ended
-  session.status = 'ended';
-  session.endTime = endTime.toISOString();
-  session.finalDuration = finalDuration;
-  session.finalTotal = finalTotal;
-  session.saleId = sale.id;
-  await saveGameSession(session);
+  // The sale was registered as paid when the session started. Update its
+  // local record with the final duration without creating a duplicate sale.
+  const sale = await getSale(session.saleId);
+  const saleSyncResult = { success: true };
+  if (sale) {
+    sale.duration = finalDuration;
+    sale.total = finalTotal;
+    sale.endTime = endTime.toISOString();
+    sale.timeSaved = endTime.toISOString();
+    await saveSale(sale);
+  }
 
   _showToast(!saleSyncResult.success ? `Session ended; Google Sheets sync pending` : `Session ended — ${formatCurrency(finalTotal)}`, !saleSyncResult.success ? '' : 'success');
   _refreshDashboard();
