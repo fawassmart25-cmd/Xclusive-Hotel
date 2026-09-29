@@ -1320,7 +1320,7 @@ async function init() {
       boot('registerOfflineShell');
       await registerOfflineShell();
       boot('resetStaleOccupancy');
-      await resetStaleOccupancy();
+      resetStaleOccupancy().catch(() => {});
       boot('seedStaffStore');
       await seedStaffStore();
       boot('seedItemStore');
