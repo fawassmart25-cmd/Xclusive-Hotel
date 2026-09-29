@@ -1309,9 +1309,9 @@ async function seedStaffStore() {
       return seeds;
 }
 
-async function registerOfflineShell() {
+function registerOfflineShell() {
   if ('serviceWorker' in navigator) {
-    try { await navigator.serviceWorker.register(`${import.meta.env.BASE_URL}service-worker.js`); } catch (_) {}
+    navigator.serviceWorker.register('./service-worker.js').catch(() => {});
   }
 }
 
