@@ -38,6 +38,21 @@ export async function seedItemStore(getAllItemPrices) {
   return seeded;
 }
 
+function formatStockDate(value) {
+  if (!value) return '—';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '—';
+  return new Intl.DateTimeFormat('en-NG', { timeZone: 'Africa/Lagos', day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }).format(date);
+}
+function isStockNewToday(value) {
+  if (!value) return false;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return false;
+  const day = date.toLocaleDateString('en-CA', { timeZone: 'Africa/Lagos' });
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Lagos' });
+  return day === today;
+}
+
 export async function renderStock({ canManage = false } = {}) {
   const root = el('div', 'dashboard fade-in-up');
   root.appendChild(el('div', 'section-header',
@@ -69,7 +84,7 @@ export async function renderStock({ canManage = false } = {}) {
   tableCard.innerHTML = `
     <div class="section-header"><span class="section-header__title">Items</span></div>
     <div class="table-wrap"><table>
-      <thead><tr><th>S/N</th><th>Item</th><th>Department</th><th>Quantity</th><th>Price</th>${canManage ? '<th>Actions</th>' : ''}</tr></thead>
+      <thead><tr><th>S/N</th><th>Item</th><th>Department</th><th>Quantity</th><th>Price</th><th>Added</th><th>Last updated</th>${canManage ? '<th>Actions</th>' : ''}</tr></thead>
       <tbody id="stock-body"></tbody>
     </table></div>
   `;
@@ -84,15 +99,16 @@ export async function renderStock({ canManage = false } = {}) {
       .sort((a,b) => `${a.department}-${a.name}`.localeCompare(`${b.department}-${b.name}`));
     body.innerHTML = '';
     if (!items.length) {
-      body.innerHTML = `<tr><td colspan="${canManage ? 6 : 5}" style="text-align:center;padding:24px;color:var(--ink-200);">No items added yet.</td></tr>`;
+      body.innerHTML = `<tr><td colspan="${canManage ? 8 : 7}" style="text-align:center;padding:24px;color:var(--ink-200);">No items added yet.</td></tr>`;
       return;
     }
     items.forEach((item, index) => {
       const tr = document.createElement('tr');
       tr.innerHTML = `
-        <td>${index + 1}</td><td>${esc(item.name)}</td>
+        <td>${index + 1}</td><td>${esc(item.name)} ${isStockNewToday(item.createdAt) ? '<span class="badge badge--success stock-new-badge">NEW</span>' : ''}</td>
         <td>${item.department === 'games' ? 'Game' : esc(item.department)}</td>
         <td>${Number(item.quantity) || 0}</td><td>${formatCurrency(item.price)}</td>
+        <td>${formatStockDate(item.createdAt)}</td><td>${formatStockDate(item.updatedAt || item.createdAt)}</td>
         ${canManage ? `<td style="display:flex;gap:6px;flex-wrap:wrap;">
           <button class="btn btn--ghost edit" data-id="${esc(item.id)}">Edit</button>
           <button class="btn btn--ghost delete" data-id="${esc(item.id)}">Delete</button>
@@ -152,7 +168,7 @@ export async function renderStock({ canManage = false } = {}) {
       await saveItem({
         id: editingId || generateId('ITEM'),
         name, department, quantity, price,
-        createdAt: editingId ? undefined : new Date().toISOString(),
+        createdAt: editingId ? ((await getAllItems()).find(i => i.id === editingId)?.createdAt || new Date().toISOString()) : new Date().toISOString(),
         updatedAt: new Date().toISOString()
       });
       resetForm();

@@ -1,4 +1,4 @@
-﻿// Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
+// Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
 //  XCLUSIVE HOTEL MANAGER Ã¢â‚¬â€ Application Shell
 //  Phase 5: Analytics Dashboard, Sync, Export, Deployment
 // Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
@@ -433,13 +433,37 @@ function buildTopBar(role) {
 
 function buildBottomNav(tabs) {
       const nav = el('nav', 'bottom-nav');
-      tabs.forEach((tab) => {
-              const item = el('button', `nav-item ${tab.id === state.currentTab ? 'active' : ''}`);
+      const primaryCount = Math.min(4, tabs.length);
+      tabs.forEach((tab, index) => {
+              const classes = 'nav-item ' + (tab.id === state.currentTab ? 'active ' : '') + (index >= primaryCount ? 'nav-item--overflow' : '');
+              const item = el('button', classes);
               item.dataset.tabId = tab.id;
-              item.innerHTML = `${getIcon(tab.icon, 24)}<span class="nav-item__label">${tab.name}</span>`;
+              item.innerHTML = getIcon(tab.icon, 24) + '<span class="nav-item__label">' + tab.name + '</span>';
               item.addEventListener('click', () => switchTab(tab.id));
               nav.appendChild(item);
       });
+      const overflowTabs = tabs.slice(primaryCount);
+      if (overflowTabs.length) {
+              const more = el('button', 'nav-item nav-more');
+              more.innerHTML = getIcon('grid', 24) + '<span class="nav-item__label">More</span>';
+              const drawerOverlay = el('div', 'nav-drawer-overlay hidden');
+              const drawer = el('div', 'nav-drawer');
+              drawer.innerHTML = '<div class="nav-drawer__header"><span>Navigation</span><button class="icon-btn nav-drawer__close" aria-label="Close navigation">×</button></div>';
+              const drawerItems = el('div', 'nav-drawer__items');
+              overflowTabs.forEach((tab) => {
+                      const item = el('button', 'nav-drawer__item ' + (tab.id === state.currentTab ? 'active' : ''));
+                      item.innerHTML = getIcon(tab.icon, 22) + '<span>' + tab.name + '</span>';
+                      item.addEventListener('click', () => switchTab(tab.id));
+                      drawerItems.appendChild(item);
+              });
+              drawer.appendChild(drawerItems);
+              drawerOverlay.appendChild(drawer);
+              drawerOverlay.addEventListener('click', (event) => { if (event.target === drawerOverlay) drawerOverlay.classList.add('hidden'); });
+              drawer.querySelector('.nav-drawer__close').addEventListener('click', () => drawerOverlay.classList.add('hidden'));
+              more.addEventListener('click', () => drawerOverlay.classList.toggle('hidden'));
+              nav.appendChild(more);
+              nav.appendChild(drawerOverlay);
+      }
       return nav;
 }
 
